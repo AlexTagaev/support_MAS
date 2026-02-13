@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Управление базой знаний</h2>
+<div class="mt-4">
+    <textarea id="kb-editor" class="form-control" rows="20">{{ content }}</textarea>
+    <div class="mt-3">
+        <button onclick="saveKnowledge()" class="btn btn-primary">Сохранить</button>
+        <button onclick="rebuildIndex()" class="btn btn-warning ms-2">Пересоздать индексы</button>
+    </div>
+</div>
+
+<script>
+async function saveKnowledge() {
+    const content = document.getElementById('kb-editor').value;
+    const formData = new FormData();
+    formData.append('content', content);
+    
+    const response = await fetch('/admin/api/knowledge', {
+        method: 'POST',
+        body: formData
+    });
+    if (response.ok) alert('Сохранено!');
+}
+
+async function rebuildIndex() {
+    if (!confirm('Это может занять время. Продолжить?')) return;
+    const response = await fetch('/admin/api/rebuild', { method: 'POST' });
+    if (response.ok) alert('Индексы обновлены!');
+}
+</script>
+{% endblock %}

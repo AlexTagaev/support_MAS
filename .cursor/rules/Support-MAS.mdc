@@ -1,0 +1,1109 @@
+---
+alwaysApply: true
+---
+# Project Rules: Нейро-техподдержка Школы Михаила Агеева
+
+**Версия:** 1.0  
+**Дата:** 13.02.2026  
+**Применимо для:** Cursor AI, разработчиков проекта
+
+---
+
+## 1. Общие принципы разработки
+
+### 1.1. Философия кода
+- **Clean Code:** Код должен быть самодокументируемым
+- **DRY (Don't Repeat Yourself):** Избегать дублирования кода
+- **KISS (Keep It Simple, Stupid):** Простота важнее сложности
+- **YAGNI (You Aren't Gonna Need It):** Не реализовывать функции "на будущее"
+- **Single Responsibility:** Каждый модуль отвечает за одну задачу
+
+### 1.2. Приоритеты
+1. **Безопасность** (API ключи, данные пользователей)
+2. **Надежность** (обработка ошибок, fallback механизмы)
+3. **Производительность** (оптимизация запросов к AI)
+4. **Читаемость** (понятный код для поддержки)
+5. **Масштабируемость** (готовность к росту нагрузки)
+
+---
+
+## 2. Python Code Style
+
+### 2.1. Стандарт кодирования
+- **PEP 8:** Строго следовать стандарту Python
+- **Type Hints:** Использовать аннотации типов везде
+- **Line Length:** Максимум 100 символов
+- **Encoding:** UTF-8 для всех файлов
+
+### 2.2. Форматирование
+
+```python
+# ✅ ПРАВИЛЬНО
+async def generate_response(
+    question: str,
+    context: str,
+    history: List[Dict[str, str]],
+    temperature: float = 0.7
+) -> str:
+    """
+    Генерирует ответ через GPT-4.1-mini.
+    
+    Args:
+        question: Вопрос пользователя
+        context: Контекст из RAG
+        history: История диалога
+        temperature: Температура генерации
+        
+    Returns:
+        str: Сгенерированный ответ
+        
+    Raises:
+        OpenAIError: Ошибка API OpenAI
+    """
+    try:
+        response = await self.client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=self._build_messages(question, context, history),
+            temperature=temperature,
+            max_tokens=800
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        logger.error(f"AI generation error: {e}")
+        raise
+
+# ❌ НЕПРАВИЛЬНО
+def generate(q,c,h,t=0.7):  # Нет типов, неясные названия
+    r=self.client.chat.completions.create(model="gpt-4.1-mini",messages=build(q,c,h),temperature=t,max_tokens=800)  # Длинная строка
+    return r.choices[0].message.content  # Нет обработки ошибок
+```
+
+### 2.3. Naming Conventions
+
+```python
+# Константы: UPPER_CASE
+MAX_CONTEXT_MESSAGES = 5
+RATE_LIMIT_WINDOW = 3600
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# Классы: PascalCase
+class RAGEngine:
+    pass
+
+class ContextManager:
+    pass
+
+# Функции и переменные: snake_case
+async def search_knowledge_base(query: str) -> List[Dict]:
+    pass
+
+user_question = "Как записаться?"
+rag_results = await search_knowledge_base(user_question)
+
+# Приватные методы: _leading_underscore
+class AIClient:
+    def _build_messages(self, question: str) -> List[Dict]:
+        pass
+    
+    async def generate_response(self, question: str) -> str:
+        messages = self._build_messages(question)
+        # ...
+
+# Булевы переменные: is_, has_, should_
+is_spam = await spam_filter.check(message)
+has_context = len(history) > 0
+should_redirect = similarity_score < 0.5
+```
+
+### 2.4. Imports
+
+```python
+# Порядок импортов:
+# 1. Стандартная библиотека
+# 2. Сторонние библиотеки
+# 3. Локальные модули
+
+# ✅ ПРАВИЛЬНО
+import os
+import json
+from typing import List, Dict, Optional
+from datetime import datetime
+
+from fastapi import FastAPI, HTTPException
+from openai import AsyncOpenAI
+from loguru import logger
+
+from app.core.rag_engine import RAGEngine
+from app.database.models import UniqueQuestion
+from app.utils.validators import validate_message
+
+# ❌ НЕПРАВИЛЬНО
+from app.core.rag_engine import RAGEngine  # Локальные первыми
+import os  # Стандартная библиотека после
+from fastapi import FastAPI
+```
+
+---
+
+## 3. Архитектурные правила
+
+### 3.1. Структура модулей
+
+```python
+# ✅ ПРАВИЛЬНО - Разделение ответственности
+# app/core/rag_engine.py
+class RAGEngine:
+    """Только работа с векторным поиском"""
+    async def search(self, query: str) -> List[Dict]:
+        pass
+
+# app/core/ai_client.py  
+class AIClient:
+    """Только взаимодействие с OpenAI API"""
+    async def generate_response(self, prompt: str) -> str:
+        pass
+
+# app/integrations/telegram_bot.py
+class TelegramHandler:
+    """Только обработка Telegram сообщений"""
+    def __init__(self, rag: RAGEngine, ai: AIClient):
+        self.rag = rag
+        self.ai = ai
+
+# ❌ НЕПРАВИЛЬНО - Все в одном файле
+class MegaHandler:
+    """Делает все: RAG, AI, Telegram, Jivo, DB"""
+    pass
+```
+
+### 3.2. Dependency Injection
+
+```python
+# ✅ ПРАВИЛЬНО
+class MessageHandler:
+    def __init__(
+        self,
+        rag_engine: RAGEngine,
+        ai_client: AIClient,
+        context_manager: ContextManager,
+        rate_limiter: RateLimiter
+    ):
+        self.rag = rag_engine
+        self.ai = ai_client
+        self.context = context_manager
+        self.limiter = rate_limiter
+
+# Использование
+rag = RAGEngine(knowledge_path, index_path)
+ai = AIClient(api_key)
+context = ContextManager(max_messages=5)
+limiter = RateLimiter(max_requests=20)
+
+handler = MessageHandler(rag, ai, context, limiter)
+
+# ❌ НЕПРАВИЛЬНО - Жесткие зависимости
+class MessageHandler:
+    def __init__(self):
+        self.rag = RAGEngine("hardcoded/path")  # Жестко заданный путь
+        self.ai = AIClient("sk-hardcoded-key")   # Ключ в коде!
+```
+
+### 3.3. Конфигурация
+
+```python
+# ✅ ПРАВИЛЬНО - Pydantic Settings
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    openai_api_key: str
+    telegram_bot_token: str
+    max_context_messages: int = 5
+    rate_limit_requests: int = 20
+    
+    class Config:
+        env_file = ".env"
+        case_sensitive = False
+
+settings = Settings()
+
+# ❌ НЕПРАВИЛЬНО - Прямое чтение .env
+OPENAI_KEY = "sk-hardcoded"  # Ключ в коде
+MAX_MESSAGES = 5  # Константы вместо конфига
+```
+
+---
+
+## 4. Асинхронное программирование
+
+### 4.1. Async/Await
+
+```python
+# ✅ ПРАВИЛЬНО - Асинхронные функции
+async def handle_message(user_id: str, text: str) -> str:
+    """Все I/O операции асинхронные"""
+    
+    # Проверка rate limit (быстро, можно синхронно)
+    if not await rate_limiter.check(user_id):
+        raise RateLimitError()
+    
+    # Параллельные запросы
+    context_task = context_manager.get_context(user_id)
+    rag_task = rag_engine.search(text)
+    
+    context, rag_results = await asyncio.gather(
+        context_task,
+        rag_task
+    )
+    
+    # AI запрос (I/O bound)
+    response = await ai_client.generate(text, context, rag_results)
+    
+    # Сохранение в БД (I/O bound)
+    await questions_db.add_question(text)
+    
+    return response
+
+# ❌ НЕПРАВИЛЬНО - Блокирующие операции
+def handle_message(user_id: str, text: str) -> str:
+    context = context_manager.get_context(user_id)  # Синхронно!
+    rag_results = rag_engine.search(text)           # Блокирует!
+    response = ai_client.generate(text)              # Ждем ответ!
+    return response
+```
+
+### 4.2. Error Handling в async
+
+```python
+# ✅ ПРАВИЛЬНО
+async def safe_ai_call(prompt: str) -> Optional[str]:
+    """Безопасный вызов AI с обработкой ошибок"""
+    try:
+        response = await ai_client.generate(prompt)
+        return response
+    except OpenAIError as e:
+        logger.error(f"OpenAI API error: {e}")
+        return None
+    except asyncio.TimeoutError:
+        logger.error("AI request timeout")
+        return None
+    except Exception as e:
+        logger.exception(f"Unexpected error: {e}")
+        return None
+
+# Использование
+response = await safe_ai_call(prompt)
+if response is None:
+    return "Извините, возникла ошибка. Попробуйте позже."
+
+# ❌ НЕПРАВИЛЬНО
+async def ai_call(prompt: str) -> str:
+    response = await ai_client.generate(prompt)  # Краш при ошибке!
+    return response
+```
+
+---
+
+## 5. Работа с AI и RAG
+
+### 5.1. RAG Best Practices
+
+```python
+# ✅ ПРАВИЛЬНО - Кэширование embeddings
+class RAGEngine:
+    def __init__(self):
+        self.embedding_cache = {}  # LRU cache
+    
+    async def get_embedding(self, text: str) -> List[float]:
+        """Кэширование часто используемых embeddings"""
+        cache_key = hashlib.md5(text.encode()).hexdigest()
+        
+        if cache_key in self.embedding_cache:
+            return self.embedding_cache[cache_key]
+        
+        embedding = await self.openai.embeddings.create(
+            model="text-embedding-3-small",
+            input=text
+        )
+        
+        self.embedding_cache[cache_key] = embedding.data[0].embedding
+        return embedding.data[0].embedding
+
+# ❌ НЕПРАВИЛЬНО - Каждый раз новый запрос
+async def get_embedding(self, text: str) -> List[float]:
+    embedding = await self.openai.embeddings.create(
+        model="text-embedding-3-small",
+        input=text
+    )
+    return embedding.data[0].embedding
+```
+
+### 5.2. Prompt Engineering
+
+```python
+# ✅ ПРАВИЛЬНО - Структурированный промт
+SYSTEM_PROMPT_TEMPLATE = """
+Ты — нейро-консультант Школы Михаила Агеева.
+Отвечай исключительно на основе предоставленных документов.
+
+ПРАВИЛА:
+1. Используй только информацию из базы знаний
+2. Никогда не упоминай "базу знаний" в ответах
+3. Если нет ответа → направь в хелп-чат: {help_chat_url}
+4. Если вопрос не по теме → сообщи об этом
+5. Отвечай на языке вопроса
+
+КОНТЕКСТ ИЗ БАЗЫ ЗНАНИЙ:
+{rag_context}
+
+ИСТОРИЯ ДИАЛОГА:
+{conversation_history}
+
+ВОПРОС ПОЛЬЗОВАТЕЛЯ:
+{user_question}
+"""
+
+def build_prompt(
+    rag_context: str,
+    history: List[Dict],
+    question: str
+) -> str:
+    """Формирование промта с валидацией"""
+    if not rag_context:
+        logger.warning("Empty RAG context")
+    
+    history_str = "\n".join([
+        f"{msg['role']}: {msg['content']}" 
+        for msg in history
+    ])
+    
+    return SYSTEM_PROMPT_TEMPLATE.format(
+        help_chat_url="https://t.me/Ageev_Help_chat",
+        rag_context=rag_context,
+        conversation_history=history_str,
+        user_question=question
+    )
+
+# ❌ НЕПРАВИЛЬНО - Конкатенация строк
+def build_prompt(context, history, question):
+    return "Ты консультант. " + context + str(history) + question
+```
+
+### 5.3. Rate Limiting для API
+
+```python
+# ✅ ПРАВИЛЬНО - Retry с exponential backoff
+from tenacity import retry, stop_after_attempt, wait_exponential
+
+class AIClient:
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10)
+    )
+    async def generate_with_retry(self, prompt: str) -> str:
+        """Автоматический retry при ошибках"""
+        try:
+            response = await self.client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=[{"role": "user", "content": prompt}],
+                timeout=30.0
+            )
+            return response.choices[0].message.content
+        except RateLimitError:
+            logger.warning("Rate limit hit, retrying...")
+            raise  # Tenacity повторит запрос
+        except Exception as e:
+            logger.error(f"AI error: {e}")
+            raise
+
+# ❌ НЕПРАВИЛЬНО - Без retry
+async def generate(self, prompt: str) -> str:
+    response = await self.client.chat.completions.create(...)
+    return response.choices[0].message.content  # Упадет при rate limit
+```
+
+---
+
+## 6. Database и Storage
+
+### 6.1. SQLAlchemy Models
+
+```python
+# ✅ ПРАВИЛЬНО - Полная модель с валидацией
+from sqlalchemy import Column, Integer, String, DateTime, LargeBinary
+from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
+
+Base = declarative_base()
+
+class UniqueQuestion(Base):
+    __tablename__ = "unique_questions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    question = Column(String(2000), nullable=False, index=True)
+    embedding = Column(LargeBinary, nullable=False)  # Pickle embedding
+    source = Column(String(20), nullable=False)  # "telegram" or "jivo"
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    count = Column(Integer, nullable=False, default=1)
+    
+    def __repr__(self):
+        return f"<Question(id={self.id}, source={self.source}, count={self.count})>"
+
+# ❌ НЕПРАВИЛЬНО - Неполная модель
+class Question(Base):
+    __tablename__ = "questions"
+    id = Column(Integer, primary_key=True)
+    text = Column(String)  # Нет ограничения длины, nullable
+```
+
+### 6.2. Database Operations
+
+```python
+# ✅ ПРАВИЛЬНО - Асинхронные операции с контекстом
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+async def add_unique_question(
+    session: AsyncSession,
+    question: str,
+    embedding: bytes,
+    source: str
+) -> Optional[UniqueQuestion]:
+    """Добавление уникального вопроса"""
+    try:
+        # Проверка на дубликаты
+        similar = await find_similar_questions(session, embedding)
+        if similar:
+            similar.count += 1
+            await session.commit()
+            return similar
+        
+        # Создание нового
+        new_question = UniqueQuestion(
+            question=question,
+            embedding=embedding,
+            source=source
+        )
+        session.add(new_question)
+        await session.commit()
+        await session.refresh(new_question)
+        
+        return new_question
+        
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"DB error: {e}")
+        raise
+
+# ❌ НЕПРАВИЛЬНО - Синхронные операции, без обработки ошибок
+def add_question(question, embedding, source):
+    q = UniqueQuestion(question=question, embedding=embedding, source=source)
+    session.add(q)
+    session.commit()  # Может упасть
+    return q
+```
+
+---
+
+## 7. Логирование
+
+### 7.1. Structured Logging
+
+```python
+# ✅ ПРАВИЛЬНО - Структурированные логи с контекстом
+from loguru import logger
+import json
+
+# Настройка логирования
+logger.add(
+    "logs/app_{time:YYYY-MM-DD}.log",
+    rotation="00:00",
+    retention="30 days",
+    compression="zip",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
+    serialize=True  # JSON формат
+)
+
+# Использование
+@logger.catch  # Автоматический catch исключений
+async def handle_message(user_id: str, text: str) -> str:
+    logger.info(
+        "Processing message",
+        extra={
+            "user_id": user_id,
+            "message_length": len(text),
+            "source": "telegram"
+        }
+    )
+    
+    try:
+        response = await generate_response(text)
+        
+        logger.info(
+            "Message processed successfully",
+            extra={
+                "user_id": user_id,
+                "response_length": len(response),
+                "processing_time_ms": 1250
+            }
+        )
+        
+        return response
+        
+    except Exception as e:
+        logger.error(
+            "Message processing failed",
+            extra={
+                "user_id": user_id,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+        )
+        raise
+
+# ❌ НЕПРАВИЛЬНО - Простые print или неструктурированные логи
+def handle_message(user_id, text):
+    print(f"Got message from {user_id}")  # Плохо!
+    logger.info("Processing...")  # Нет контекста
+    response = generate_response(text)
+    print("Done")  # Нет деталей
+    return response
+```
+
+### 7.2. Уровни логирования
+
+```python
+# DEBUG - Детальная информация для отладки
+logger.debug(f"RAG search returned {len(results)} chunks")
+
+# INFO - Обычные события
+logger.info(f"User {user_id} sent message")
+
+# WARNING - Предупреждения
+logger.warning(f"Low similarity score: {score}")
+
+# ERROR - Ошибки, которые не падают приложение
+logger.error(f"Failed to save to DB: {e}")
+
+# CRITICAL - Критические ошибки
+logger.critical(f"OpenAI API key is invalid!")
+```
+
+---
+
+## 8. Безопасность
+
+### 8.1. Secrets Management
+
+```python
+# ✅ ПРАВИЛЬНО - Secrets из переменных окружения
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    openai_api_key: str  # Обязательное поле
+    telegram_bot_token: str
+    admin_password_hash: str
+    
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+
+settings = Settings()
+
+# Использование
+client = AsyncOpenAI(api_key=settings.openai_api_key)
+
+# ❌ НЕПРАВИЛЬНО - Хардкод секретов
+OPENAI_KEY = "sk-proj-abc123..."  # НИКОГДА!
+TELEGRAM_TOKEN = "1234567:ABC..."  # НИКОГДА!
+```
+
+### 8.2. Input Validation
+
+```python
+# ✅ ПРАВИЛЬНО - Валидация входных данных
+from pydantic import BaseModel, validator, Field
+
+class UserMessage(BaseModel):
+    user_id: str = Field(..., min_length=1, max_length=100)
+    text: str = Field(..., min_length=1, max_length=2000)
+    source: str = Field(..., regex="^(telegram|jivo)$")
+    
+    @validator("text")
+    def validate_text(cls, v):
+        """Проверка на спам-паттерны"""
+        if len(v.strip()) < 3:
+            raise ValueError("Message too short")
+        if v.count("http") > 3:
+            raise ValueError("Too many links")
+        return v.strip()
+
+# Использование
+@app.post("/api/message")
+async def receive_message(message: UserMessage):
+    """FastAPI автоматически валидирует"""
+    response = await handler.process(message.user_id, message.text)
+    return {"response": response}
+
+# ❌ НЕПРАВИЛЬНО - Нет валидации
+@app.post("/api/message")
+async def receive_message(data: dict):
+    user_id = data["user_id"]  # Может не быть!
+    text = data["text"]  # Может быть None!
+    response = await handler.process(user_id, text)  # Краш!
+```
+
+### 8.3. SQL Injection Prevention
+
+```python
+# ✅ ПРАВИЛЬНО - Параметризованные запросы (SQLAlchemy ORM)
+from sqlalchemy import select
+
+async def get_questions_by_source(session: AsyncSession, source: str):
+    """Безопасный запрос через ORM"""
+    stmt = select(UniqueQuestion).where(
+        UniqueQuestion.source == source
+    )
+    result = await session.execute(stmt)
+    return result.scalars().all()
+
+# ❌ НЕПРАВИЛЬНО - Конкатенация строк (SQL Injection!)
+async def get_questions(session, source):
+    query = f"SELECT * FROM questions WHERE source = '{source}'"
+    result = await session.execute(query)  # ОПАСНО!
+```
+
+---
+
+## 9. Тестирование
+
+### 9.1. Unit Tests
+
+```python
+# ✅ ПРАВИЛЬНО - Изолированные unit тесты
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+
+@pytest.fixture
+def rag_engine():
+    """Фикстура для RAG Engine"""
+    engine = RAGEngine(
+        knowledge_path="tests/fixtures/test_knowledge.md",
+        index_path="tests/fixtures/test_index"
+    )
+    return engine
+
+@pytest.mark.asyncio
+async def test_search_returns_relevant_results(rag_engine):
+    """Тест поиска релевантных результатов"""
+    query = "Как записаться на программу?"
+    
+    results = await rag_engine.search(query, top_k=3)
+    
+    assert len(results) == 3
+    assert all(r["score"] > 0.5 for r in results)
+    assert "записаться" in results[0]["text"].lower()
+
+@pytest.mark.asyncio
+async def test_ai_client_with_mock():
+    """Тест AI клиента с моком OpenAI"""
+    mock_openai = AsyncMock()
+    mock_openai.chat.completions.create.return_value = MagicMock(
+        choices=[MagicMock(message=MagicMock(content="Тестовый ответ"))]
+    )
+    
+    ai_client = AIClient(client=mock_openai)
+    response = await ai_client.generate("Тестовый вопрос")
+    
+    assert response == "Тестовый ответ"
+    mock_openai.chat.completions.create.assert_called_once()
+
+# ❌ НЕПРАВИЛЬНО - Тесты с реальными API
+async def test_ai_client():
+    client = AIClient(api_key="sk-real-key")  # Тратит деньги!
+    response = await client.generate("Тест")  # Медленно!
+    assert response  # Нестабильно!
+```
+
+### 9.2. Integration Tests
+
+```python
+# ✅ ПРАВИЛЬНО - Интеграционные тесты с тестовой БД
+@pytest.fixture
+async def test_db():
+    """Временная БД для тестов"""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    
+    async with AsyncSession(engine) as session:
+        yield session
+    
+    await engine.dispose()
+
+@pytest.mark.asyncio
+async def test_add_unique_question_flow(test_db):
+    """Тест полного флоу добавления вопроса"""
+    question = "Тестовый вопрос"
+    embedding = b"fake_embedding"
+    source = "telegram"
+    
+    # Первое добавление
+    q1 = await add_unique_question(test_db, question, embedding, source)
+    assert q1.count == 1
+    
+    # Повторное добавление (должен увеличить count)
+    q2 = await add_unique_question(test_db, question, embedding, source)
+    assert q2.id == q1.id
+    assert q2.count == 2
+```
+
+### 9.3. Test Coverage
+
+```bash
+# Цель: минимум 80% покрытия
+pytest tests/ --cov=app --cov-report=html --cov-report=term
+
+# Обязательно покрывать:
+# - Критическую бизнес-логику (RAG, AI)
+# - Обработку ошибок
+# - Валидацию данных
+# - Безопасность (rate limiting, spam filter)
+```
+
+---
+
+## 10. Документирование
+
+### 10.1. Docstrings
+
+```python
+# ✅ ПРАВИЛЬНО - Google Style Docstrings
+def calculate_similarity(embedding1: List[float], embedding2: List[float]) -> float:
+    """
+    Вычисляет cosine similarity между двумя embeddings.
+    
+    Args:
+        embedding1: Первый вектор embedding
+        embedding2: Второй вектор embedding
+        
+    Returns:
+        float: Значение similarity от 0 до 1
+        
+    Raises:
+        ValueError: Если векторы разной длины
+        
+    Example:
+        >>> emb1 = [0.1, 0.2, 0.3]
+        >>> emb2 = [0.2, 0.3, 0.4]
+        >>> similarity = calculate_similarity(emb1, emb2)
+        >>> print(f"{similarity:.2f}")
+        0.99
+    """
+    if len(embedding1) != len(embedding2):
+        raise ValueError("Embeddings must have same length")
+    
+    return np.dot(embedding1, embedding2) / (
+        np.linalg.norm(embedding1) * np.linalg.norm(embedding2)
+    )
+
+# ❌ НЕПРАВИЛЬНО - Нет документации
+def calc_sim(e1, e2):
+    return np.dot(e1, e2) / (np.linalg.norm(e1) * np.linalg.norm(e2))
+```
+
+### 10.2. Комментарии
+
+```python
+# ✅ ПРАВИЛЬНО - Объяснение "почему", а не "что"
+async def process_message(text: str) -> str:
+    # Используем более высокий порог схожести для базы знаний школы,
+    # чтобы избежать false positives на духовные темы
+    similarity_threshold = 0.85
+    
+    # Ограничение на 3 чанка, т.к. больше приводит к "размыванию"
+    # контекста в промте и менее точным ответам
+    rag_results = await rag.search(text, top_k=3)
+    
+    return await ai.generate(text, rag_results)
+
+# ❌ НЕПРАВИЛЬНО - Очевидные комментарии
+async def process_message(text: str) -> str:
+    threshold = 0.85  # Устанавливаем порог в 0.85
+    results = await rag.search(text, top_k=3)  # Ищем 3 результата
+    return await ai.generate(text, results)  # Генерируем ответ
+```
+
+---
+
+## 11. Git Workflow
+
+### 11.1. Commit Messages
+
+```bash
+# ✅ ПРАВИЛЬНО - Conventional Commits
+git commit -m "feat: add FAISS indexing for knowledge base"
+git commit -m "fix: handle rate limit errors in Telegram handler"
+git commit -m "docs: update README with deployment instructions"
+git commit -m "refactor: extract prompt building into separate function"
+git commit -m "test: add unit tests for RAG engine"
+
+# Типы коммитов:
+# feat: новая функциональность
+# fix: исправление бага
+# docs: документация
+# refactor: рефакторинг кода
+# test: добавление тестов
+# chore: рутинные задачи (обновление зависимостей)
+
+# ❌ НЕПРАВИЛЬНО
+git commit -m "fixes"
+git commit -m "update"
+git commit -m "asdf"
+```
+
+### 11.2. Branching Strategy
+
+```bash
+# main - стабильная версия (production)
+# develop - разработка
+# feature/* - новые фичи
+# bugfix/* - исправления
+# hotfix/* - критические исправления
+
+# Пример workflow:
+git checkout develop
+git checkout -b feature/jivo-integration
+# ... работа ...
+git add .
+git commit -m "feat: add Jivo webhook handler"
+git push origin feature/jivo-integration
+# Создать Pull Request: feature/jivo-integration → develop
+```
+
+---
+
+## 12. Performance Optimization
+
+### 12.1. Кэширование
+
+```python
+# ✅ ПРАВИЛЬНО - LRU Cache для embeddings
+from functools import lru_cache
+import hashlib
+
+class RAGEngine:
+    @lru_cache(maxsize=1000)
+    def _get_text_hash(self, text: str) -> str:
+        """Кэширование хэшей текста"""
+        return hashlib.md5(text.encode()).hexdigest()
+    
+    async def search(self, query: str, top_k: int = 3) -> List[Dict]:
+        # Проверяем кэш перед созданием embedding
+        cache_key = self._get_text_hash(query)
+        
+        if cache_key in self.embedding_cache:
+            embedding = self.embedding_cache[cache_key]
+        else:
+            embedding = await self._create_embedding(query)
+            self.embedding_cache[cache_key] = embedding
+        
+        # Поиск в FAISS
+        distances, indices = self.index.search(
+            np.array([embedding], dtype=np.float32),
+            top_k
+        )
+        
+        return self._format_results(indices, distances)
+```
+
+### 12.2. Batch Operations
+
+```python
+# ✅ ПРАВИЛЬНО - Батчинг для множественных запросов
+async def process_multiple_questions(
+    questions: List[str]
+) -> List[Dict]:
+    """Обработка нескольких вопросов одновременно"""
+    
+    # Параллельная генерация embeddings
+    embedding_tasks = [
+        create_embedding(q) for q in questions
+    ]
+    embeddings = await asyncio.gather(*embedding_tasks)
+    
+    # Батчевый поиск в FAISS (быстрее чем по одному)
+    distances, indices = index.search(
+        np.array(embeddings, dtype=np.float32),
+        k=3
+    )
+    
+    return format_batch_results(indices, distances)
+
+# ❌ НЕПРАВИЛЬНО - Последовательная обработка
+async def process_multiple_questions(questions: List[str]) -> List[Dict]:
+    results = []
+    for q in questions:  # Медленно!
+        embedding = await create_embedding(q)
+        result = index.search(embedding, k=3)
+        results.append(result)
+    return results
+```
+
+---
+
+## 13. Error Messages
+
+### 13.1. User-Facing Messages
+
+```python
+# ✅ ПРАВИЛЬНО - Понятные сообщения для пользователя
+ERROR_MESSAGES = {
+    "rate_limit": "Превышен лимит запросов. Попробуйте через {minutes} минут. 😊",
+    "spam_detected": "Обнаружена подозрительная активность. Пожалуйста, используйте бота корректно.",
+    "no_answer": "Точный и самый актуальный ответ на этот вопрос вам дадут кураторы в хелп-чате https://t.me/Ageev_Help_chat",
+    "off_topic": "На такие вопросы здесь нет ответов, потому что они не относятся к тематике Школы и духовного развития. 🙏",
+    "server_error": "Извините, возникла временная ошибка. Попробуйте еще раз через минуту."
+}
+
+async def handle_error(error: Exception, user_id: str) -> str:
+    """Преобразование технических ошибок в понятные сообщения"""
+    if isinstance(error, RateLimitError):
+        minutes = error.retry_after // 60
+        return ERROR_MESSAGES["rate_limit"].format(minutes=minutes)
+    
+    elif isinstance(error, SpamError):
+        logger.warning(f"Spam detected from user {user_id}")
+        return ERROR_MESSAGES["spam_detected"]
+    
+    else:
+        logger.error(f"Unexpected error for user {user_id}: {error}")
+        return ERROR_MESSAGES["server_error"]
+
+# ❌ НЕПРАВИЛЬНО - Технические ошибки пользователю
+async def handle_error(error: Exception) -> str:
+    return f"Error: {str(error)}"  # "RateLimitError: too many requests"
+```
+
+---
+
+## 14. Monitoring и Health Checks
+
+### 14.1. Health Check Endpoint
+
+```python
+# ✅ ПРАВИЛЬНО - Детальная проверка компонентов
+from enum import Enum
+
+class HealthStatus(str, Enum):
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNHEALTHY = "unhealthy"
+
+@app.get("/health")
+async def health_check() -> Dict:
+    """Проверка состояния всех компонентов"""
+    checks = {}
+    overall_status = HealthStatus.HEALTHY
+    
+    # Проверка OpenAI API
+    try:
+        await ai_client.test_connection()
+        checks["openai_api"] = "ok"
+    except Exception as e:
+        checks["openai_api"] = f"error: {str(e)}"
+        overall_status = HealthStatus.UNHEALTHY
+    
+    # Проверка FAISS индекса
+    try:
+        if rag_engine.index is not None:
+            checks["faiss_index"] = "ok"
+        else:
+            checks["faiss_index"] = "not loaded"
+            overall_status = HealthStatus.DEGRADED
+    except Exception as e:
+        checks["faiss_index"] = f"error: {str(e)}"
+        overall_status = HealthStatus.UNHEALTHY
+    
+    # Проверка БД
+    try:
+        await database.execute("SELECT 1")
+        checks["database"] = "ok"
+    except Exception as e:
+        checks["database"] = f"error: {str(e)}"
+        overall_status = HealthStatus.UNHEALTHY
+    
+    return {
+        "status": overall_status,
+        "checks": checks,
+        "uptime_seconds": get_uptime(),
+        "version": "1.0.0",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+```
+
+---
+
+## 15. Code Review Checklist
+
+### Перед коммитом проверь:
+
+- [ ] Код следует PEP 8
+- [ ] Все функции имеют type hints
+- [ ] Добавлены docstrings для публичных функций/классов
+- [ ] Нет хардкода секретов или конфигурации
+- [ ] Добавлена обработка ошибок (try/except)
+- [ ] Используются async/await для I/O операций
+- [ ] Добавлено логирование важных событий
+- [ ] Нет SQL injection или других уязвимостей
+- [ ] Написаны unit тесты (если новая функциональность)
+- [ ] Обновлена документация (если изменился API)
+- [ ] Commit message следует Conventional Commits
+- [ ] Код не дублируется (DRY)
+- [ ] Переменные и функции имеют понятные названия
+
+---
+
+## 16. Полезные команды
+
+```bash
+# Форматирование кода
+black app/ --line-length 100
+isort app/
+
+# Линтинг
+flake8 app/ --max-line-length=100
+mypy app/ --strict
+
+# Тестирование
+pytest tests/ -v --cov=app --cov-report=html
+
+# Запуск локально
+uvicorn app.main:app --reload --port 8000
+
+# Docker
+docker-compose up --build
+docker-compose logs -f app
+
+# Обновление зависимостей
+pip list --outdated
+pip install -U package_name
+pip freeze > requirements.txt
+```
+
+---
+
+## 17. Контакты и поддержка
+
+**Вопросы по коду:**
+- Создать Issue в репозитории
+- Написать в чат команды
+
+**Обновление правил:**
+- Правила обновляются по мере развития проекта
+- Предложения приветствуются через Pull Requests
+
+**Версионирование:**
+- v1.0.0 - Текущая версия (13.02.2026)
+
+---
+
+_Эти правила — живой документ. При обнаружении несоответствий или необходимости добавления новых правил — обновляйте этот файл._

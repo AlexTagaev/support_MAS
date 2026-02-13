@@ -1,0 +1,39 @@
+services:
+  app:
+    build: .
+    container_name: neuro-support
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV=production
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - neuro-net
+
+  nginx:
+    image: nginx:alpine
+    container_name: neuro-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+    networks:
+      - neuro-net
+
+networks:
+  neuro-net:
+    driver: bridge
+
+volumes:
+  data:
+  logs:

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Тестирование ответов</h2>
+<div class="mt-4">
+    <div class="mb-3">
+        <label class="form-label">Ваш вопрос:</label>
+        <input type="text" id="test-question" class="form-control" placeholder="Введите вопрос...">
+    </div>
+    <button onclick="sendTest()" class="btn btn-primary">Отправить</button>
+</div>
+
+<div id="test-result" class="mt-5" style="display: none;">
+    <h4>Ответ бота:</h4>
+    <div class="alert alert-success" id="bot-answer"></div>
+    
+    <h4 class="mt-4">Найденный контекст:</h4>
+    <pre class="bg-light p-3 border" id="bot-context"></pre>
+</div>
+
+<script>
+async function sendTest() {
+    const question = document.getElementById('test-question').value;
+    const formData = new FormData();
+    formData.append('question', question);
+    
+    document.getElementById('test-result').style.display = 'none';
+    
+    const response = await fetch('/admin/api/test', {
+        method: 'POST',
+        body: formData
+    });
+    const data = await response.json();
+    
+    document.getElementById('bot-answer').innerText = data.answer;
+    document.getElementById('bot-context').innerText = data.context;
+    document.getElementById('test-result').style.display = 'block';
+}
+</script>
+{% endblock %}

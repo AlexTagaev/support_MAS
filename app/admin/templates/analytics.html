@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Аналитика уникальных вопросов</h2>
+<div class="card mt-4">
+    <div class="card-body">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Вопрос</th>
+                    <th>Источник</th>
+                    <th>Дата</th>
+                    <th>Повторов</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for q in questions %}
+                <tr>
+                    <td>{{ q.id }}</td>
+                    <td>{{ q.question }}</td>
+                    <td><span class="badge bg-info">{{ q.source }}</span></td>
+                    <td>{{ q.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                    <td>{{ q.count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
