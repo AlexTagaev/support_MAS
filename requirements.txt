@@ -1,21 +1,19 @@
-# Web Framework
+# Web Framework (легковесные)
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 jinja2==3.1.3
 
-# AI & ML
+# AI & ML (только необходимое)
 openai==1.10.0
 faiss-cpu==1.7.4
-sentence-transformers==2.3.1
 numpy==1.26.3
 
-# Telegram
+# Telegram (легковесный клиент)
 aiogram==3.3.0
 
 # HTTP клиент
 httpx==0.26.0
-aiohttp==3.9.1
 
 # База данных
 sqlalchemy==2.0.25
@@ -36,13 +34,8 @@ python-jose[cryptography]==3.3.0
 # Валидация
 validators==0.22.0
 
-# Markdown
+# Markdown (легковесный)
 markdown==3.5.2
 
-# Экспорт данных
+# Экспорт данных (только для админки, lazy import)
 pandas==2.1.4
-
-# Тестирование
-pytest==7.4.4
-pytest-asyncio==0.23.3
-pytest-cov==4.1.0

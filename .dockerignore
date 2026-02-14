@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Tests
+tests/
+*.test.py
+test_*.py
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Logs
+logs/
+*.log
+
+# Data (копируется отдельно или монтируется)
+data/*.db
+data/faiss_index/
+
+# Config examples
+.env.example
+.env.local
+
+# Docker
+docker-compose.yml
+docker-compose.override.yml
+Dockerfile
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.circleci/
+
+# Backups
+backups/
+*.bak
+*.backup
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Cursor
+.cursor/
