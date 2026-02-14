@@ -1,17 +1,40 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      cache_from:
+        - neuro-support:latest
+    image: neuro-support:latest
     container_name: neuro-support
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
       - ENV=production
+      - PYTHONUNBUFFERED=1
+      - LOGURU_LEVEL=INFO
     env_file:
       - .env
     volumes:
-      - ./data:/app/data
+      - ./data/knowledge_base.md:/app/data/knowledge_base.md:ro
+      - ./data/faiss_index:/app/data/faiss_index
+      - ./data/database.db:/app/data/database.db
       - ./logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - neuro-net
 
@@ -25,15 +48,13 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     networks:
       - neuro-net
 
 networks:
   neuro-net:
     driver: bridge
-
-volumes:
-  data:
-  logs:
