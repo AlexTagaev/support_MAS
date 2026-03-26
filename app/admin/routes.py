@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse
@@ -58,6 +59,12 @@ def _apply_runtime_ai_settings(updates: dict[str, str]) -> None:
     for key, value in updates.items():
         if hasattr(settings, key):
             setattr(settings, key, value)
+
+
+def _is_valid_url(url: str) -> bool:
+    """Проверяет, что строка похожа на корректный HTTP(S) URL."""
+    parsed = urlparse(url)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -127,19 +134,62 @@ async def save_ai_settings(
     ai_model: str = Form(...),
     username: str = Depends(verify_admin)
 ):
-    if llm_provider not in {"openai", "proxiapi"}:
+    provider = llm_provider.strip().lower()
+    openai_key = openai_api_key.strip()
+    openai_base = openai_api_base.strip()
+    proxiapi_key = proxiapi_api_key.strip()
+    proxiapi_base = proxiapi_api_base.strip()
+    model = ai_model.strip()
+
+    if provider not in {"openai", "proxiapi"}:
         return {
             "status": "error",
             "message": "Провайдер должен быть openai или proxiapi."
         }
 
+    if not model:
+        return {
+            "status": "error",
+            "message": "Поле AI_MODEL не должно быть пустым."
+        }
+
+    if provider == "openai" and not openai_key:
+        return {
+            "status": "error",
+            "message": "Для OpenAI укажите OPENAI_API_KEY."
+        }
+
+    if provider == "proxiapi":
+        if not proxiapi_key:
+            return {
+                "status": "error",
+                "message": "Для ProxiAPI укажите PROXIAPI_API_KEY."
+            }
+        if not proxiapi_base:
+            return {
+                "status": "error",
+                "message": "Для ProxiAPI укажите PROXIAPI_API_BASE."
+            }
+
+    if openai_base and not _is_valid_url(openai_base):
+        return {
+            "status": "error",
+            "message": "OPENAI_API_BASE должен быть корректным URL."
+        }
+
+    if proxiapi_base and not _is_valid_url(proxiapi_base):
+        return {
+            "status": "error",
+            "message": "PROXIAPI_API_BASE должен быть корректным URL."
+        }
+
     env_updates = {
-        "LLM_PROVIDER": llm_provider.strip(),
-        "OPENAI_API_KEY": openai_api_key.strip(),
-        "OPENAI_API_BASE": openai_api_base.strip(),
-        "PROXIAPI_API_KEY": proxiapi_api_key.strip(),
-        "PROXIAPI_API_BASE": proxiapi_api_base.strip(),
-        "AI_MODEL": ai_model.strip()
+        "LLM_PROVIDER": provider,
+        "OPENAI_API_KEY": openai_key,
+        "OPENAI_API_BASE": openai_base,
+        "PROXIAPI_API_KEY": proxiapi_key,
+        "PROXIAPI_API_BASE": proxiapi_base,
+        "AI_MODEL": model
     }
     _update_env_file(env_updates)
     _apply_runtime_ai_settings(env_updates)

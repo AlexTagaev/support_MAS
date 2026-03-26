@@ -60,7 +60,58 @@
 </div>
 
 <script>
+function validateAiSettings() {
+    const provider = document.getElementById('llm-provider').value;
+    const model = document.getElementById('ai-model').value.trim();
+    const openaiKey = document.getElementById('openai-api-key').value.trim();
+    const openaiBase = document.getElementById('openai-api-base').value.trim();
+    const proxiapiKey = document.getElementById(
+        'proxiapi-api-key'
+    ).value.trim();
+    const proxiapiBase = document.getElementById(
+        'proxiapi-api-base'
+    ).value.trim();
+
+    if (!model) {
+        return 'Поле AI_MODEL не должно быть пустым.';
+    }
+    if (provider === 'openai' && !openaiKey) {
+        return 'Для OpenAI укажите OPENAI_API_KEY.';
+    }
+    if (provider === 'proxiapi' && !proxiapiKey) {
+        return 'Для ProxiAPI укажите PROXIAPI_API_KEY.';
+    }
+    if (provider === 'proxiapi' && !proxiapiBase) {
+        return 'Для ProxiAPI укажите PROXIAPI_API_BASE.';
+    }
+
+    const maybeUrlFields = [
+        {name: 'OPENAI_API_BASE', value: openaiBase},
+        {name: 'PROXIAPI_API_BASE', value: proxiapiBase}
+    ];
+    for (const field of maybeUrlFields) {
+        if (!field.value) {
+            continue;
+        }
+        try {
+            const parsed = new URL(field.value);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                return `${field.name} должен начинаться с http:// или https://`;
+            }
+        } catch (error) {
+            return `${field.name} должен быть корректным URL.`;
+        }
+    }
+    return null;
+}
+
 async function saveAiSettings() {
+    const validationError = validateAiSettings();
+    if (validationError) {
+        alert(validationError);
+        return;
+    }
+
     const formData = new FormData();
     formData.append(
         'llm_provider',
