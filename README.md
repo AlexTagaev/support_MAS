@@ -85,8 +85,12 @@ cp .env.example .env
 
 Отредактируйте `.env` и заполните обязательные поля:
 ```env
-# OpenAI
+# AI provider
+LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-your-actual-key-here
+OPENAI_API_BASE=
+PROXIAPI_API_KEY=your-proxyapi-key
+PROXIAPI_API_BASE=https://api.proxyapi.ru/openai/v1
 
 # Telegram
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
@@ -130,7 +134,7 @@ curl http://localhost:8000/health
   "status": "healthy",
   "version": "2.0.0-refactored",
   "checks": {
-    "openai_api": "ok",
+    "llm_api": "ok",
     "database": "ok",
     "faiss_index": "ok"
   }
@@ -145,7 +149,11 @@ curl http://localhost:8000/health
 
 | Переменная | Описание | По умолчанию | Обязательна |
 |------------|----------|--------------|-------------|
+| `LLM_PROVIDER` | Провайдер LLM (`openai`/`proxiapi`) | `openai` | ✅ |
 | `OPENAI_API_KEY` | API ключ OpenAI | - | ✅ |
+| `OPENAI_API_BASE` | Base URL OpenAI (обычно пусто) | - | ❌ |
+| `PROXIAPI_API_KEY` | API ключ ProxiAPI | - | ✅ |
+| `PROXIAPI_API_BASE` | Base URL ProxiAPI | `https://api.proxyapi.ru/openai/v1` | ❌ |
 | `TELEGRAM_BOT_TOKEN` | Токен Telegram бота | - | ✅ |
 | `TELEGRAM_WEBHOOK_URL` | URL для webhook (если используется) | - | ❌ |
 | `TELEGRAM_USE_WEBHOOK` | Использовать webhook вместо polling | `false` | ❌ |
@@ -153,7 +161,7 @@ curl http://localhost:8000/health
 | `JIVO_WEBHOOK_SECRET` | Секрет для Jivo webhook | - | ❌ |
 | `ADMIN_USERNAME` | Логин для админки | `admin` | ✅ |
 | `ADMIN_PASSWORD_HASH` | Пароль для админки | - | ✅ |
-| `AI_MODEL` | Модель OpenAI | `gpt-4.1-mini` | ❌ |
+| `AI_MODEL` | Общая модель для OpenAI/ProxiAPI | `gpt-4.1-mini` | ❌ |
 | `AI_TEMPERATURE` | Температура генерации | `0.7` | ❌ |
 | `AI_MAX_TOKENS` | Максимум токенов в ответе | `800` | ❌ |
 | `CHUNK_SIZE` | Размер чанка для RAG | `1000` | ❌ |
@@ -194,6 +202,12 @@ curl http://localhost:8000/health
 - Проверка ответов бота без отправки в Telegram
 - Показывает найденные фрагменты из базы знаний
 - Полезно для отладки некорректных ответов
+
+**4. Настройки AI** (`/admin/settings`)
+- Выбор провайдера (`openai` или `proxiapi`)
+- Редактирование ключей и base URL для обоих провайдеров
+- Изменение `AI_MODEL` (одна модель для обоих провайдеров)
+- Сохранение настроек одновременно в `.env` и runtime-конфиг
 
 ---
 
@@ -545,6 +559,15 @@ curl http://localhost:8000/health
 - **text-embedding-3-small**: ~$0.02 / 1M токенов
 - **Примерная стоимость**: $10-30/мес при средней нагрузке (100-300 запросов/день)
 
+### Можно ли использовать ProxiAPI вместо OpenAI?
+Да. Укажите в `.env`:
+- `LLM_PROVIDER=proxiapi`
+- `PROXIAPI_API_KEY=<ваш ключ>`
+- `PROXIAPI_API_BASE=https://api.proxyapi.ru/openai/v1`
+
+То же самое можно настроить через `/admin/settings` без ручного
+редактирования файла.
+
 ### Можно ли использовать другую AI модель?
 Да, измените `AI_MODEL` в `.env`. Поддерживаемые модели OpenAI:
 - `gpt-4.1-mini` (рекомендуется, оптимально по цене/качеству)
@@ -552,7 +575,8 @@ curl http://localhost:8000/health
 - `gpt-3.5-turbo` (дешевле, но менее точный)
 
 ### Работает ли система без интернета?
-Нет. Требуется доступ к OpenAI API для генерации ответов и embeddings.
+Нет. Требуется доступ к API выбранного провайдера (OpenAI или ProxiAPI)
+для генерации ответов и embeddings.
 
 ### Можно ли заменить OpenAI на локальную модель (LLaMA, Mistral)?
 Технически да, но потребуется:

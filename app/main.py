@@ -38,7 +38,7 @@ async def health_check():
         "status": "healthy",
         "version": "1.0.0",
         "checks": {
-            "openai_api": "ok",
+            "llm_api": "ok",
             "database": "ok",
             "faiss_index": "ok"
         }

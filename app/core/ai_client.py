@@ -1,11 +1,27 @@
 from typing import List, Dict, Optional
+
 from openai import AsyncOpenAI
-from app.config import settings
 from loguru import logger
+
+from app.config import settings
 
 class AIClient:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        pass
+
+    @staticmethod
+    def _build_client() -> AsyncOpenAI:
+        """Создает клиента по текущему провайдеру из настроек."""
+        provider = settings.LLM_PROVIDER
+        if provider == "proxiapi":
+            return AsyncOpenAI(
+                api_key=settings.PROXIAPI_API_KEY,
+                base_url=settings.PROXIAPI_API_BASE
+            )
+        return AsyncOpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            base_url=settings.OPENAI_API_BASE
+        )
 
     async def generate_response(
         self,
@@ -16,6 +32,7 @@ class AIClient:
     ) -> str:
         """Генерация ответа через GPT-4.1-mini."""
         try:
+            client = self._build_client()
             messages = [
                 {"role": "system", "content": system_prompt.format(rag_context=rag_context, conversation_history="", user_question="")}
             ]
@@ -26,7 +43,7 @@ class AIClient:
                 
             messages.append({"role": "user", "content": user_question})
 
-            response = await self.client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=settings.AI_MODEL,
                 messages=messages,
                 temperature=settings.AI_TEMPERATURE,

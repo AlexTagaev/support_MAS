@@ -1,16 +1,17 @@
 import os
+import json
 import faiss
 import numpy as np
 from typing import List, Dict
 from openai import OpenAI
-from app.config import settings
 from loguru import logger
+
+from app.config import settings
 
 class RAGEngine:
     def __init__(self, knowledge_base_path: str, index_path: str):
         self.kb_path = knowledge_base_path
         self.index_path = index_path
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.index = None
         self.metadata = []
         
@@ -19,9 +20,22 @@ class RAGEngine:
         else:
             logger.warning("FAISS index not found. Please rebuild index.")
 
+    @staticmethod
+    def _build_client() -> OpenAI:
+        """Создает клиента embeddings по текущему провайдеру."""
+        if settings.LLM_PROVIDER == "proxiapi":
+            return OpenAI(
+                api_key=settings.PROXIAPI_API_KEY,
+                base_url=settings.PROXIAPI_API_BASE
+            )
+        return OpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            base_url=settings.OPENAI_API_BASE
+        )
+
     def _get_embedding(self, text: str) -> List[float]:
         """Получение embedding через OpenAI API."""
-        response = self.client.embeddings.create(
+        response = self._build_client().embeddings.create(
             input=text,
             model="text-embedding-3-small"
         )
@@ -78,7 +92,6 @@ class RAGEngine:
             os.makedirs(self.index_path)
         
         faiss.write_index(self.index, os.path.join(self.index_path, "index.faiss"))
-        import json
         with open(os.path.join(self.index_path, "metadata.json"), "w", encoding="utf-8") as f:
             json.dump(self.metadata, f, ensure_ascii=False, indent=4)
         
@@ -87,7 +100,6 @@ class RAGEngine:
     def load_index(self) -> None:
         """Загрузка индекса с диска."""
         self.index = faiss.read_index(os.path.join(self.index_path, "index.faiss"))
-        import json
         with open(os.path.join(self.index_path, "metadata.json"), "r", encoding="utf-8") as f:
             self.metadata = json.load(f)
         logger.info("Index loaded from disk.")
