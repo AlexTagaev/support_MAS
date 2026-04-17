@@ -1,8 +1,17 @@
+"""Защитные механизмы входящих сообщений.
+
+Модуль содержит две независимые защиты:
+- `RateLimiter`: ограничивает частоту запросов пользователем;
+- `SpamFilter`: отсекает повторяющиеся или слишком короткие/длинные
+  сообщения, чтобы не нагружать LLM и RAG.
+"""
+
 import time
 from typing import Dict, List
 from app.config import settings
 
 class RateLimiter:
+    """Базовый rate limiter на уровне процесса (in-memory)."""
     def __init__(self, max_requests: int = 20, window: int = 3600):
         self.max_requests = max_requests
         self.window = window
@@ -22,14 +31,15 @@ class RateLimiter:
         
         return len(self.requests[user_id]) < self.max_requests
 
-    async def increment(self, user_id: str):
-        """Регистрация запроса."""
+    async def increment(self, user_id: str) -> None:
+        """Регистрирует факт запроса для пользователя."""
         now = time.time()
         if user_id not in self.requests:
             self.requests[user_id] = []
         self.requests[user_id].append(now)
 
 class SpamFilter:
+    """Фильтр спама по эвристикам (также in-memory)."""
     def __init__(self):
         self.last_messages = {}  # {user_id: [msg1, msg2, msg3]}
         self.blacklist = set()

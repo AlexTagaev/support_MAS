@@ -1,9 +1,20 @@
+"""Модель настроек приложения (Pydantic Settings).
+
+Класс `Settings` читает значения из `.env` и предоставляет их остальным
+модулям (LLM провайдеры, пути к файлам базы знаний, параметры RAG и т.п.).
+"""
+
 from typing import Literal
 from typing import Optional
 
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
+    """Параметры приложения.
+
+    Используется `pydantic-settings` для загрузки переменных окружения.
+    Файл `.env` задаётся в классе `Config`.
+    """
     # AI провайдеры
     LLM_PROVIDER: Literal["openai", "proxiapi"] = "openai"
     OPENAI_API_KEY: str

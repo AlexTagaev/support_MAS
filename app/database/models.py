@@ -1,3 +1,9 @@
+"""ORM-модели для БД вопросов.
+
+Используется SQLAlchemy для хранения уникальных вопросов и связанных
+embeddings в бинарном виде (pickle).
+"""
+
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, LargeBinary
 from sqlalchemy.ext.declarative import declarative_base
@@ -5,6 +11,11 @@ from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
 
 class UniqueQuestion(Base):
+    """Сущность уникального вопроса.
+
+    `embedding` хранится как pickle-байты, чтобы избежать отдельной
+    векторной БД на данном этапе.
+    """
     __tablename__ = "unique_questions"
     
     id = Column(Integer, primary_key=True, autoincrement=True)

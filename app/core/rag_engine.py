@@ -1,15 +1,35 @@
-import os
+"""RAG-движок: индексирование Markdown базы знаний и поиск по FAISS.
+
+Модуль отвечает за:
+- разбиение базы знаний в формате Markdown на чанки;
+- получение embeddings через OpenAI-совместимый API;
+- построение/загрузку FAISS индекса и выдачу релевантных фрагментов.
+"""
+
 import json
+import os
 import faiss
 import numpy as np
-from typing import List, Dict
+from typing import Dict
+from typing import List
 from openai import OpenAI
 from loguru import logger
 
 from app.config import settings
 
 class RAGEngine:
+    """Индексатор и поисковик по базе знаний для RAG.
+
+    Хранение:
+    - FAISS индекс: `index.faiss`
+    - метаданные чанков: `metadata.json`
+
+    Примечание: индекс пересоздаётся из Markdown-файла базы знаний и
+    используется для семантического поиска фрагментов, которые затем
+    подаются в LLM как контекст.
+    """
     def __init__(self, knowledge_base_path: str, index_path: str):
+        """Создаёт объект RAGEngine и загружает индекс при наличии."""
         self.kb_path = knowledge_base_path
         self.index_path = index_path
         self.index = None
@@ -22,7 +42,7 @@ class RAGEngine:
 
     @staticmethod
     def _build_client() -> OpenAI:
-        """Создает клиента embeddings по текущему провайдеру."""
+        """Создаёт embeddings-клиента по текущему провайдеру."""
         if settings.LLM_PROVIDER == "proxiapi":
             return OpenAI(
                 api_key=settings.PROXIAPI_API_KEY,
@@ -34,32 +54,197 @@ class RAGEngine:
         )
 
     def _get_embedding(self, text: str) -> List[float]:
-        """Получение embedding через OpenAI API."""
+        """Возвращает embedding для текста через OpenAI embeddings API."""
         response = self._build_client().embeddings.create(
             input=text,
             model="text-embedding-3-small"
         )
         return response.data[0].embedding
 
-    def _chunk_text(self, text: str) -> List[str]:
-        """Разбивка текста на чанки."""
-        # Простая реализация чанкинга (можно улучшить по ТЗ)
-        chunks = []
-        lines = text.split("\n")
-        current_chunk = ""
-        
-        for line in lines:
-            if len(current_chunk) + len(line) < settings.CHUNK_SIZE:
-                current_chunk += line + "\n"
-            else:
-                chunks.append(current_chunk.strip())
-                current_chunk = line + "\n"
-        if current_chunk:
-            chunks.append(current_chunk.strip())
+    @staticmethod
+    def _is_md_heading(line: str) -> bool:
+        """Проверяет, что строка является Markdown-заголовком."""
+        stripped = line.lstrip()
+        if not stripped.startswith("#"):
+            return False
+        after_hashes = stripped.lstrip("#")
+        return after_hashes.startswith(" ")
+
+    @staticmethod
+    def _is_md_rule(line: str) -> bool:
+        """Проверяет, что строка является Markdown-разделителем."""
+        stripped = line.strip()
+        return stripped in {"---", "***", "___"}
+
+    def _split_md_to_blocks(self, text: str) -> List[str]:
+        """Разбивает Markdown на логические блоки.
+
+        Приоритет: заголовки и горизонтальные разделители. Внутри fenced
+        блоков кода (```), разбиение по заголовкам не применяется.
+        """
+        blocks: List[str] = []
+        current: List[str] = []
+        in_code_block = False
+
+        for raw_line in text.splitlines():
+            line = raw_line.rstrip("\n")
+            stripped = line.strip()
+
+            if stripped.startswith("```"):
+                in_code_block = not in_code_block
+                current.append(line)
+                continue
+
+            if not in_code_block and (self._is_md_heading(line) or
+                                      self._is_md_rule(line)):
+                if current:
+                    block = "\n".join(current).strip()
+                    if block:
+                        blocks.append(block)
+                    current = []
+
+                current.append(line)
+                continue
+
+            current.append(line)
+
+        if current:
+            block = "\n".join(current).strip()
+            if block:
+                blocks.append(block)
+
+        return blocks
+
+    def _split_md_block_by_paragraphs(self, text: str) -> List[str]:
+        """Делит Markdown-блок на сегменты по пустым строкам.
+
+        Внутри fenced блоков кода (```), пустые строки не считаются
+        разделителями.
+        """
+        segments: List[str] = []
+        current: List[str] = []
+        in_code_block = False
+
+        for raw_line in text.splitlines():
+            line = raw_line.rstrip("\n")
+            stripped = line.strip()
+
+            if stripped.startswith("```"):
+                in_code_block = not in_code_block
+                current.append(line)
+                continue
+
+            if not in_code_block and stripped == "":
+                seg = "\n".join(current).strip()
+                if seg:
+                    segments.append(seg)
+                current = []
+                continue
+
+            current.append(line)
+
+        seg = "\n".join(current).strip()
+        if seg:
+            segments.append(seg)
+
+        return segments
+
+    def _hard_split_with_overlap(self, text: str) -> List[str]:
+        """Резервное разбиение по символам, если сегмент слишком большой.
+
+        Используется только как последний шаг, чтобы гарантировать, что
+        чанк не превышает `settings.CHUNK_SIZE`.
+        """
+        max_size = max(1, int(settings.CHUNK_SIZE))
+        overlap = max(0, int(settings.CHUNK_OVERLAP))
+        if overlap >= max_size:
+            overlap = max(0, max_size // 4)
+
+        chunks: List[str] = []
+        start = 0
+        while start < len(text):
+            end = min(len(text), start + max_size)
+            chunk = text[start:end].strip()
+            if chunk:
+                chunks.append(chunk)
+            if end >= len(text):
+                break
+            start = max(0, end - overlap)
+
         return chunks
 
+    def _pack_segments_to_chunks(self, segments: List[str]) -> List[str]:
+        """Собирает сегменты в чанки, соблюдая `CHUNK_SIZE` и overlap."""
+        max_size = max(1, int(settings.CHUNK_SIZE))
+        overlap = max(0, int(settings.CHUNK_OVERLAP))
+        if overlap >= max_size:
+            overlap = max(0, max_size // 4)
+
+        chunks: List[str] = []
+        current = ""
+
+        for segment in segments:
+            if not segment:
+                continue
+
+            if len(segment) > max_size:
+                if current.strip():
+                    chunks.append(current.strip())
+                    current = ""
+                chunks.extend(self._hard_split_with_overlap(segment))
+                continue
+
+            candidate = segment if not current else f"{current}\n\n{segment}"
+            if len(candidate) <= max_size:
+                current = candidate
+                continue
+
+            if current.strip():
+                chunks.append(current.strip())
+
+            prefix = ""
+            if chunks and overlap > 0:
+                prefix = chunks[-1][-overlap:].strip()
+
+            if prefix:
+                current = f"{prefix}\n\n{segment}"
+            else:
+                current = segment
+
+        if current.strip():
+            chunks.append(current.strip())
+
+        return chunks
+
+    def _chunk_text(self, text: str) -> List[str]:
+        """Разбивка Markdown-текста на чанки для RAG.
+
+        Логика:
+        - сначала разбиение по структуре Markdown (заголовки/разделители),
+        - затем при необходимости ужатие блоков до `settings.CHUNK_SIZE`,
+          стараясь не ломать fenced блоки кода.
+
+        `settings.CHUNK_SIZE` остаётся верхним лимитом: он нужен как защита
+        от слишком длинных фрагментов (embeddings API и качество поиска).
+        """
+        if not text.strip():
+            return []
+
+        blocks = self._split_md_to_blocks(text)
+        chunks: List[str] = []
+
+        for block in blocks:
+            if len(block) <= settings.CHUNK_SIZE:
+                chunks.append(block.strip())
+                continue
+
+            segments = self._split_md_block_by_paragraphs(block)
+            chunks.extend(self._pack_segments_to_chunks(segments))
+
+        return [c for c in chunks if c.strip()]
+
     def rebuild_index(self) -> None:
-        """Пересоздание индекса из .md файла."""
+        """Пересоздаёт FAISS индекс из Markdown-файла базы знаний."""
         logger.info(f"Rebuilding index from {self.kb_path}")
         if not os.path.exists(self.kb_path):
             logger.error(f"Knowledge base file not found: {self.kb_path}")
@@ -87,7 +272,8 @@ class RAGEngine:
         self.index = faiss.IndexFlatL2(dimension)
         self.index.add(embeddings_np)
 
-        # Сохранение
+        # Важно: сохраняем индекс и метаданные атомарно в одну директорию,
+        # чтобы при рестарте сервиса можно было быстро восстановиться.
         if not os.path.exists(self.index_path):
             os.makedirs(self.index_path)
         
@@ -115,9 +301,9 @@ class RAGEngine:
         results = []
         for i, idx in enumerate(indices[0]):
             if idx != -1 and idx < len(self.metadata):
-                # В FAISS IndexFlatL2 distance - это L2 расстояние. 
-                # Для cosine similarity нужно использовать IndexFlatIP с нормализацией.
-                # Здесь используем упрощенный score.
+                # Ограничение текущей реализации: в IndexFlatL2 меньше = лучше.
+                # Если понадобится cosine similarity, нужно перейти на IndexFlatIP
+                # и нормализовать эмбеддинги.
                 results.append({
                     "text": self.metadata[idx]["text"],
                     "score": float(distances[0][i]),

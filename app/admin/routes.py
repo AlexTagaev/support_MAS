@@ -1,3 +1,12 @@
+"""Роуты админ-панели.
+
+Админка предназначена для внутреннего использования:
+- просмотр аналитики уникальных вопросов;
+- редактирование Markdown базы знаний;
+- пересборка FAISS индекса;
+- настройка параметров LLM провайдера в `.env` и runtime.
+"""
+
 import os
 from pathlib import Path
 from urllib.parse import urlparse
@@ -16,6 +25,8 @@ from app.database.questions_db import QuestionsDB
 router = APIRouter(prefix="/admin")
 templates = Jinja2Templates(directory="app/admin/templates")
 
+# В текущей архитектуре используем глобальные singletons на модуль.
+# Это упрощает запуск. При росте нагрузки лучше перейти на DI.
 rag = RAGEngine(settings.KNOWLEDGE_BASE_PATH, settings.FAISS_INDEX_PATH)
 db = QuestionsDB()
 ai = AIClient()
@@ -69,6 +80,7 @@ def _is_valid_url(url: str) -> bool:
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, username: str = Depends(verify_admin)):
+    """Главная страница админки: аналитика уникальных вопросов."""
     questions = await db.get_all_questions()
     return templates.TemplateResponse("analytics.html", {
         "request": request, 
@@ -78,6 +90,7 @@ async def dashboard(request: Request, username: str = Depends(verify_admin)):
 
 @router.get("/knowledge", response_class=HTMLResponse)
 async def knowledge_page(request: Request, username: str = Depends(verify_admin)):
+    """Страница просмотра/редактирования базы знаний (Markdown)."""
     content = ""
     if os.path.exists(settings.KNOWLEDGE_BASE_PATH):
         with open(settings.KNOWLEDGE_BASE_PATH, "r", encoding="utf-8") as f:
@@ -90,17 +103,20 @@ async def knowledge_page(request: Request, username: str = Depends(verify_admin)
 
 @router.post("/api/knowledge")
 async def save_knowledge(content: str = Form(...), username: str = Depends(verify_admin)):
+    """Сохраняет обновлённый Markdown базы знаний на диск."""
     with open(settings.KNOWLEDGE_BASE_PATH, "w", encoding="utf-8") as f:
         f.write(content)
     return {"status": "success"}
 
 @router.post("/api/rebuild")
 async def rebuild_index(username: str = Depends(verify_admin)):
+    """Пересобирает FAISS индекс по актуальной базе знаний."""
     rag.rebuild_index()
     return {"status": "success"}
 
 @router.get("/test", response_class=HTMLResponse)
 async def testing_page(request: Request, username: str = Depends(verify_admin)):
+    """UI-страница для ручного тестирования вопросов к ассистенту."""
     return templates.TemplateResponse("testing.html", {
         "request": request,
         "active_page": "testing"
@@ -109,6 +125,7 @@ async def testing_page(request: Request, username: str = Depends(verify_admin)):
 
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, username: str = Depends(verify_admin)):
+    """UI-страница настроек LLM провайдера и модели."""
     return templates.TemplateResponse(
         "settings.html",
         {
@@ -134,6 +151,7 @@ async def save_ai_settings(
     ai_model: str = Form(...),
     username: str = Depends(verify_admin)
 ):
+    """Сохраняет AI-настройки в `.env` и применяет их в runtime."""
     provider = llm_provider.strip().lower()
     openai_key = openai_api_key.strip()
     openai_base = openai_api_base.strip()
@@ -199,6 +217,7 @@ async def save_ai_settings(
 
 @router.post("/api/test")
 async def test_query(question: str = Form(...), username: str = Depends(verify_admin)):
+    """Возвращает ответ модели и контекст (для проверки качества RAG)."""
     rag_context = await rag.get_context_for_query(question)
     response = await ai.generate_response(
         user_question=question,
