@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Настройки AI</h2>
+<div class="card mt-4">
+    <div class="card-body">
+        <div class="mb-3">
+            <label for="llm-provider" class="form-label">Провайдер LLM</label>
+            <select id="llm-provider" class="form-select">
+                <option value="openai"
+                    {% if llm_provider == "openai" %}selected{% endif %}>
+                    OpenAI
+                </option>
+                <option value="proxiapi"
+                    {% if llm_provider == "proxiapi" %}selected{% endif %}>
+                    ProxiAPI
+                </option>
+            </select>
+        </div>
+
+        <div class="mb-3">
+            <label for="ai-model" class="form-label">Модель (общая)</label>
+            <input type="text" id="ai-model" class="form-control"
+                   value="{{ ai_model }}" placeholder="gpt-4.1-mini">
+        </div>
+
+        <hr>
+        <h5>OpenAI</h5>
+        <div class="mb-3">
+            <label for="openai-api-key" class="form-label">OPENAI_API_KEY</label>
+            <input type="text" id="openai-api-key" class="form-control"
+                   value="{{ openai_api_key }}">
+        </div>
+        <div class="mb-3">
+            <label for="openai-api-base"
+                   class="form-label">OPENAI_API_BASE</label>
+            <input type="text" id="openai-api-base" class="form-control"
+                   value="{{ openai_api_base }}"
+                   placeholder="https://api.openai.com/v1">
+        </div>
+
+        <hr>
+        <h5>ProxiAPI</h5>
+        <div class="mb-3">
+            <label for="proxiapi-api-key"
+                   class="form-label">PROXIAPI_API_KEY</label>
+            <input type="text" id="proxiapi-api-key" class="form-control"
+                   value="{{ proxiapi_api_key }}">
+        </div>
+        <div class="mb-3">
+            <label for="proxiapi-api-base"
+                   class="form-label">PROXIAPI_API_BASE</label>
+            <input type="text" id="proxiapi-api-base" class="form-control"
+                   value="{{ proxiapi_api_base }}">
+        </div>
+
+        <button onclick="saveAiSettings()" class="btn btn-primary">
+            Сохранить настройки
+        </button>
+    </div>
+</div>
+
+<script>
+function validateAiSettings() {
+    const provider = document.getElementById('llm-provider').value;
+    const model = document.getElementById('ai-model').value.trim();
+    const openaiKey = document.getElementById('openai-api-key').value.trim();
+    const openaiBase = document.getElementById('openai-api-base').value.trim();
+    const proxiapiKey = document.getElementById(
+        'proxiapi-api-key'
+    ).value.trim();
+    const proxiapiBase = document.getElementById(
+        'proxiapi-api-base'
+    ).value.trim();
+
+    if (!model) {
+        return 'Поле AI_MODEL не должно быть пустым.';
+    }
+    if (provider === 'openai' && !openaiKey) {
+        return 'Для OpenAI укажите OPENAI_API_KEY.';
+    }
+    if (provider === 'proxiapi' && !proxiapiKey) {
+        return 'Для ProxiAPI укажите PROXIAPI_API_KEY.';
+    }
+    if (provider === 'proxiapi' && !proxiapiBase) {
+        return 'Для ProxiAPI укажите PROXIAPI_API_BASE.';
+    }
+
+    const maybeUrlFields = [
+        {name: 'OPENAI_API_BASE', value: openaiBase},
+        {name: 'PROXIAPI_API_BASE', value: proxiapiBase}
+    ];
+    for (const field of maybeUrlFields) {
+        if (!field.value) {
+            continue;
+        }
+        try {
+            const parsed = new URL(field.value);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                return `${field.name} должен начинаться с http:// или https://`;
+            }
+        } catch (error) {
+            return `${field.name} должен быть корректным URL.`;
+        }
+    }
+    return null;
+}
+
+async function saveAiSettings() {
+    const validationError = validateAiSettings();
+    if (validationError) {
+        alert(validationError);
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append(
+        'llm_provider',
+        document.getElementById('llm-provider').value
+    );
+    formData.append(
+        'openai_api_key',
+        document.getElementById('openai-api-key').value
+    );
+    formData.append(
+        'openai_api_base',
+        document.getElementById('openai-api-base').value
+    );
+    formData.append(
+        'proxiapi_api_key',
+        document.getElementById('proxiapi-api-key').value
+    );
+    formData.append(
+        'proxiapi_api_base',
+        document.getElementById('proxiapi-api-base').value
+    );
+    formData.append(
+        'ai_model',
+        document.getElementById('ai-model').value
+    );
+
+    const response = await fetch('/admin/api/settings/ai', {
+        method: 'POST',
+        body: formData
+    });
+    const data = await response.json();
+    if (data.status === 'success') {
+        alert('Настройки сохранены в .env и применены.');
+    } else {
+        alert(data.message || 'Ошибка сохранения настроек.');
+    }
+}
+</script>
+{% endblock %}

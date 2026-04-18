@@ -99,12 +99,12 @@ async def verify_migration():
 
 async def main():
     """Главная функция миграции."""
-    print("\n")
+    logger.info("")
     logger.info("╔═══════════════════════════════════════════════════════════╗")
     logger.info("║   Миграция FAISS индексов на OpenAI Embeddings API       ║")
     logger.info("║   Школа Михаила Агеева - Нейро-техподдержка v2.0        ║")
     logger.info("╚═══════════════════════════════════════════════════════════╝")
-    print("\n")
+    logger.info("")
     
     # Проверка API ключа
     if not settings.OPENAI_API_KEY or settings.OPENAI_API_KEY.startswith("sk-..."):

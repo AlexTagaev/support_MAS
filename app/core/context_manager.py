@@ -1,10 +1,26 @@
+"""Менеджер диалогового контекста пользователей.
+
+Контекст хранится в памяти процесса:
+- ограничение длины задаётся `max_context`;
+- устаревшие контексты удаляются по TTL.
+
+Важно: при рестарте приложения контекст теряется (это ожидаемо).
+"""
+
 import time
 from collections import deque
-from typing import List, Dict
-from app.config import settings
+from typing import Dict
+from typing import List
 
 class ContextManager:
+    """Хранит последние сообщения пользователя для более связного диалога."""
     def __init__(self, max_context: int = 5, ttl: int = 3600):
+        """Создаёт менеджер контекста.
+
+        Args:
+            max_context: Максимум сообщений в истории на пользователя.
+            ttl: Время жизни контекста в секундах с момента активности.
+        """
         self.max_context = max_context
         self.ttl = ttl
         self.contexts = {}  # {user_id: deque([msg1, msg2, ...])}
@@ -33,7 +49,7 @@ class ContextManager:
             del self.timestamps[user_id]
 
     async def cleanup_expired(self):
-        """Удаление устаревших контекстов (TTL)."""
+        """Удаление устаревших контекстов по TTL."""
         now = time.time()
         expired_users = [
             user_id for user_id, last_ts in self.timestamps.items()

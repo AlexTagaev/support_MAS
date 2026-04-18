@@ -1,8 +1,16 @@
+"""Хранилище уникальных вопросов для аналитики админки.
+
+Модуль отвечает за сохранение пользовательских вопросов в SQLite через
+SQLAlchemy (async) и использует embeddings для оценки уникальности.
+"""
+
 import pickle
+
 import numpy as np
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select, update
+from sqlalchemy import select
+
 from app.database.models import Base, UniqueQuestion
 from app.config import settings
 from openai import OpenAI
@@ -14,22 +22,35 @@ engine = create_async_engine(DATABASE_URL, echo=False)
 async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 class QuestionsDB:
+    """Асинхронный слой доступа к БД вопросов.
+
+    Уникальность определяется по сходству embeddings:
+    если cosine similarity >= `settings.SIMILARITY_THRESHOLD`,
+    то вопрос считается повтором и увеличивается счётчик.
+    """
     def __init__(self):
+        """Инициализирует OpenAI-клиент для вычисления embeddings."""
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
     async def init_db(self):
+        """Создаёт таблицы в БД при первом запуске."""
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
     def _get_embedding(self, text: str) -> np.ndarray:
+        """Возвращает embedding в виде numpy-массива."""
         response = self.client.embeddings.create(
             input=text,
             model="text-embedding-3-small"
         )
         return np.array(response.data[0].embedding)
 
-    def _cosine_similarity(self, v1, v2):
-        return np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+    def _cosine_similarity(self, v1: np.ndarray, v2: np.ndarray) -> float:
+        """Считает cosine similarity двух векторов."""
+        denom = np.linalg.norm(v1) * np.linalg.norm(v2)
+        if denom == 0:
+            return 0.0
+        return float(np.dot(v1, v2) / denom)
 
     async def add_question(self, question: str, source: str) -> bool:
         """Добавление вопроса с проверкой на уникальность."""
@@ -60,6 +81,7 @@ class QuestionsDB:
             return True
 
     async def get_all_questions(self):
+        """Возвращает все уникальные вопросы, отсортированные по времени."""
         async with async_session() as session:
             result = await session.execute(select(UniqueQuestion).order_by(UniqueQuestion.created_at.desc()))
             return result.scalars().all()

@@ -1,3 +1,14 @@
+"""Webhook-интеграция JivoSite.
+
+Модуль получает входящие события от Jivo и отвечает текстом,
+используя ту же pipeline-логику, что и для Telegram:
+- rate limiting;
+- фильтрация спама;
+- запись вопросов для аналитики;
+- RAG-подбор контекста из Markdown базы знаний;
+- генерация ответа через LLM.
+"""
+
 import httpx
 from fastapi import APIRouter, Request
 from app.config import settings
@@ -20,6 +31,14 @@ db = QuestionsDB()
 
 @router.post("/api/jivo/webhook")
 async def jivo_webhook(request: Request):
+    """Обрабатывает webhook от Jivo и возвращает статус выполнения.
+
+    Ожидаемое событие:
+    - `event_name == "chat.message"`
+
+    Если событие не подходит или текст отсутствует — возвращаем `ok`,
+    чтобы Jivo не пытался повторять доставку.
+    """
     payload = await request.json()
     event_name = payload.get("event_name")
     
@@ -62,6 +81,7 @@ async def jivo_webhook(request: Request):
     return {"status": "ok"}
 
 async def send_jivo_message(client_id: str, text: str):
+    """Отправляет сообщение в чат Jivo по `client_id`."""
     url = "https://api.jivo.ru/bot/v1/message"
     headers = {
         "Authorization": f"Bearer {settings.JIVO_BOT_TOKEN}",

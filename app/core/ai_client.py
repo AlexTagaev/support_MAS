@@ -1,11 +1,43 @@
-from typing import List, Dict, Optional
+"""Клиент для генерации ответов через OpenAI-совместимый Chat API.
+
+Модуль инкапсулирует:
+- выбор провайдера (OpenAI/ProxiAPI) по настройкам;
+- формирование массива сообщений для chat.completions;
+- базовую обработку ошибок (без выброса исключений наружу).
+"""
+
+from typing import Dict
+from typing import List
+
 from openai import AsyncOpenAI
-from app.config import settings
 from loguru import logger
 
+from app.config import settings
+
 class AIClient:
+    """Обёртка над Chat Completions API для генерации ответов бота."""
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        """Инициализация клиента.
+
+        Сейчас состояние не хранится (клиент создаётся при запросе),
+        чтобы корректно учитывать возможные runtime-изменения настроек
+        через админку.
+        """
+        return
+
+    @staticmethod
+    def _build_client() -> AsyncOpenAI:
+        """Создает клиента по текущему провайдеру из настроек."""
+        provider = settings.LLM_PROVIDER
+        if provider == "proxiapi":
+            return AsyncOpenAI(
+                api_key=settings.PROXIAPI_API_KEY,
+                base_url=settings.PROXIAPI_API_BASE
+            )
+        return AsyncOpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            base_url=settings.OPENAI_API_BASE
+        )
 
     async def generate_response(
         self,
@@ -14,19 +46,32 @@ class AIClient:
         conversation_history: List[Dict],
         system_prompt: str
     ) -> str:
-        """Генерация ответа через GPT-4.1-mini."""
+        """Генерирует ответ модели по вопросу и RAG-контексту.
+
+        `conversation_history` ожидается в формате OpenAI:
+        [{"role": "...", "content": "..."}]
+        """
         try:
+            client = self._build_client()
             messages = [
-                {"role": "system", "content": system_prompt.format(rag_context=rag_context, conversation_history="", user_question="")}
+                {
+                    "role": "system",
+                    "content": system_prompt.format(
+                        rag_context=rag_context,
+                        conversation_history="",
+                        user_question="",
+                    ),
+                }
             ]
             
-            # Добавляем историю (последние 5 сообщений)
+            # Историю добавляем как есть: ограничение по длине истории
+            # обеспечивается `ContextManager`.
             for msg in conversation_history:
                 messages.append(msg)
                 
             messages.append({"role": "user", "content": user_question})
 
-            response = await self.client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=settings.AI_MODEL,
                 messages=messages,
                 temperature=settings.AI_TEMPERATURE,
