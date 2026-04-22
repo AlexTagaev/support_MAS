@@ -119,8 +119,11 @@ docker-compose up -d --build
 
 **Вариант B (через миграционный скрипт):**
 ```bash
-# Внутри контейнера
-docker exec -it neuro-support python migrate_embeddings.py
+# На хосте (в корне проекта)
+python migrate_embeddings.py
+
+# Альтернатива: запуск внутри контейнера одной командой
+docker exec -it neuro-support python -c "from app.core.rag_engine import RAGEngine; from app.config import settings; RAGEngine(settings.KNOWLEDGE_BASE_PATH, settings.FAISS_INDEX_PATH).rebuild_index()"
 ```
 
 ### 5. Проверка работоспособности
@@ -181,6 +184,7 @@ curl http://localhost:8000/health
 1. **Запуск диалога**: Найдите вашего бота в Telegram и отправьте `/start`.
 2. **Вопросы**: Просто пишите свои вопросы — бот ответит на основе базы знаний.
 3. **Очистка истории**: Команда `/clear_history` сбрасывает контекст диалога.
+4. **Команды в меню**: При запуске бот автоматически регистрирует `/start` и `/clear_history` и сбрасывает webhook в polling-режиме.
 
 ### Админ-панель
 
@@ -441,6 +445,28 @@ docker images | grep neuro-support
 3. **Polling mode:** Убедитесь, что `TELEGRAM_USE_WEBHOOK=false`
 4. Проверьте логи: `docker-compose logs app | grep telegram`
 
+### Первый ответ есть, второй "виснет"
+
+**Проблема:** Первый ответ уходит, а на втором кажется, что бот завис.
+
+**Что это обычно значит:**
+- Чаще всего это сетевой сбой до Telegram API (`api.telegram.org:443`), а не зависание RAG/LLM.
+- Проверьте ошибки `TelegramNetworkError`, `ClientConnectorError`, `ConnectionRefusedError` в логах.
+
+**Что уже учтено в коде:**
+1. Ретраи отправки сообщений в Telegram (`1/2/4` сек).
+2. Увеличенные таймауты отправки.
+3. Логи этапов пайплайна: `rag_ms`, `llm_ms`, `send_ms`, `total_ms`.
+
+**Как проверить:**
+```bash
+docker-compose logs -f app
+```
+Ищите строки вида:
+```text
+Telegram pipeline user=... sent=... rag_ms=... llm_ms=... send_ms=... total_ms=...
+```
+
 ### RAG не находит ответы
 
 **Проблема:** Бот отвечает "Точный ответ дадут в хелп-чате" на все вопросы.
@@ -528,7 +554,7 @@ docker-compose logs -f app
 nano data/knowledge_base.md
 
 # 2. Пересоздайте индексы
-docker exec -it neuro-support python migrate_embeddings.py
+python migrate_embeddings.py
 
 # Или через админку
 ```
@@ -541,7 +567,7 @@ docker exec -it neuro-support python migrate_embeddings.py
 cp -r data data.backup
 
 # 2. Запустите миграционный скрипт
-docker exec -it neuro-support python migrate_embeddings.py
+python migrate_embeddings.py
 
 # 3. Проверьте работоспособность
 curl http://localhost:8000/health
