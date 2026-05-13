@@ -1,4 +1,4 @@
-# Нейро-техподдержка Школы Михаила Агеева
+# Нейро-техподдержка сайта Школы Михаила Агеева
 
 ![Version](https://img.shields.io/badge/version-2.0.0--refactored-blue)
 ![Python](https://img.shields.io/badge/python-3.11+-green)
@@ -684,7 +684,7 @@ MIT License. См. файл [LICENSE](LICENSE) для деталей.
 **Сайт:** https://mikhail-ageev.ru/  
 **Help-chat:** https://t.me/Ageev_Help_chat  
 **Версия:** 2.0.0-refactored  
-**Дата релиза:** 14.02.2026
+**Дата релиза:** 14.04.2026
 
 ---
 
