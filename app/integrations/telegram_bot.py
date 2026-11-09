@@ -16,7 +16,7 @@ from loguru import logger
 from app.config import settings
 from app.core.ai_client import AIClient
 from app.core.context_manager import ContextManager
-from app.core.rag_engine import RAGEngine
+from app.core.rag_engine import get_rag_engine
 from app.core.spam_filter import RateLimiter
 from app.core.spam_filter import SpamFilter
 from app.database.questions_db import QuestionsDB
@@ -24,6 +24,7 @@ from app.database.questions_db import QuestionsDB
 TELEGRAM_REQUEST_TIMEOUT = 60
 SEND_MAX_RETRIES = 3
 SEND_RETRY_DELAYS = (1, 2, 4)
+MAX_PENDING_ANALYTICS = 32
 
 bot = Bot(
     token=settings.TELEGRAM_BOT_TOKEN,
@@ -31,12 +32,56 @@ bot = Bot(
 )
 dp = Dispatcher()
 
-rag = RAGEngine(settings.KNOWLEDGE_BASE_PATH, settings.FAISS_INDEX_PATH)
+rag = get_rag_engine()
 ai = AIClient()
-context_manager = ContextManager(max_context=settings.MAX_CONTEXT_MESSAGES)
-rate_limiter = RateLimiter(max_requests=settings.RATE_LIMIT_REQUESTS)
+rate_limiter = RateLimiter(max_requests=settings.RATE_LIMIT_REQUESTS, window=settings.RATE_LIMIT_WINDOW)
 spam_filter = SpamFilter()
 db = QuestionsDB()
+context_manager = ContextManager(max_context=settings.MAX_CONTEXT_MESSAGES, ttl=settings.CONTEXT_TTL)
+user_locks: dict[str, asyncio.Lock] = {}
+analytics_tasks: set[asyncio.Task] = set()
+analytics_semaphore = asyncio.Semaphore(4)
+
+
+def conversation_key(message: Message) -> str | None:
+    """Keep each user's history separate for each Telegram chat."""
+    if message.from_user is None or message.chat is None:
+        return None
+    return f"telegram_{message.chat.id}_{message.from_user.id}"
+
+
+async def _record_question_analytics(question: str) -> None:
+    """Store analytics without delaying the Telegram response path."""
+    try:
+        async with analytics_semaphore:
+            await db.add_question(question, "telegram")
+    except Exception as exc:
+        logger.warning("Question analytics unavailable: {}", exc)
+
+
+def schedule_question_analytics(question: str) -> None:
+    """Schedule a best-effort analytics write in the background."""
+    if len(analytics_tasks) >= MAX_PENDING_ANALYTICS:
+        logger.warning("Question analytics queue is full; dropping this analytics event")
+        return
+    task = asyncio.create_task(
+        _record_question_analytics(question),
+        name="telegram-question-analytics",
+    )
+    analytics_tasks.add(task)
+    task.add_done_callback(analytics_tasks.discard)
+
+
+async def drain_question_analytics(timeout: float = 5.0) -> None:
+    """Give pending analytics a short shutdown window, then cancel them."""
+    pending = tuple(analytics_tasks)
+    if not pending:
+        return
+    _, unfinished = await asyncio.wait(pending, timeout=timeout)
+    if unfinished:
+        for task in unfinished:
+            task.cancel()
+        await asyncio.gather(*unfinished, return_exceptions=True)
 
 
 async def safe_answer(message: Message, text: str) -> bool:
@@ -75,19 +120,38 @@ async def cmd_start(message: Message):
 
 @dp.message(Command("clear_history"))
 async def cmd_clear_history(message: Message):
-    user_id = f"telegram_{message.from_user.id}"
-    await context_manager.clear_context(user_id)
-    await safe_answer(message, "История диалога очищена. Можем начать с чистого листа.")
+    user_id = conversation_key(message)
+    if user_id is None:
+        return
+    lock = user_locks.setdefault(user_id, asyncio.Lock())
+    async with lock:
+        await context_manager.clear_context(user_id)
+        await safe_answer(message, "История диалога очищена. Можем начать с чистого листа.")
 
 
 @dp.message()
 async def handle_message(message: Message):
+    user_id = conversation_key(message)
+    if user_id is None:
+        return
+    lock = user_locks.setdefault(user_id, asyncio.Lock())
+    async with lock:
+        await _process_message(message, user_id)
+
+
+async def _process_message(message: Message, user_id: str):
     if message.text and message.text.startswith("/"):
         return
 
-    user_id = f"telegram_{message.from_user.id}"
     text = message.text
-    if not text:
+    if not text or not text.strip():
+        return
+
+    if rag.index is None:
+        await safe_answer(
+            message,
+            "Сервис временно запускается. Пожалуйста, повторите запрос немного позже.",
+        )
         return
 
     started_at = time.monotonic()
@@ -100,11 +164,25 @@ async def handle_message(message: Message):
     if await spam_filter.is_spam(user_id, text):
         return
 
-    await db.add_question(text, "telegram")
+    schedule_question_analytics(text)
 
     rag_started_at = time.monotonic()
     history = await context_manager.get_context(user_id)
-    rag_context = await rag.get_context_for_query(text)
+    try:
+        rag_context = await rag.get_context_for_query(text)
+    except Exception as exc:
+        logger.exception("RAG lookup failed: {}", exc)
+        await safe_answer(
+            message,
+            "Не удалось получить информацию для ответа. Пожалуйста, попробуйте позже.",
+        )
+        return
+    if not rag_context.strip():
+        await safe_answer(
+            message,
+            "Не удалось найти информацию по этому запросу. Попробуйте переформулировать его или обратитесь в поддержку.",
+        )
+        return
     rag_ms = (time.monotonic() - rag_started_at) * 1000
 
     llm_started_at = time.monotonic()
@@ -116,11 +194,10 @@ async def handle_message(message: Message):
     )
     llm_ms = (time.monotonic() - llm_started_at) * 1000
 
-    await context_manager.add_message(user_id, "user", text)
-    await context_manager.add_message(user_id, "assistant", response_text)
-
     send_started_at = time.monotonic()
     sent = await safe_answer(message, response_text)
+    if sent:
+        await context_manager.add_exchange(user_id, text, response_text)
     send_ms = (time.monotonic() - send_started_at) * 1000
     total_ms = (time.monotonic() - started_at) * 1000
 
@@ -137,14 +214,13 @@ async def handle_message(message: Message):
 
 async def start_bot():
     if settings.TELEGRAM_USE_WEBHOOK:
-        logger.info("Telegram bot starting in Webhook mode")
-    else:
-        logger.info("Telegram bot starting in Polling mode")
-        await bot.set_my_commands(
-            [
-                BotCommand(command="start", description="Запустить бота"),
-                BotCommand(command="clear_history", description="Очистить историю диалога"),
-            ]
-        )
-        await bot.delete_webhook(drop_pending_updates=True)
-        await dp.start_polling(bot)
+        raise RuntimeError("Telegram webhook mode is not implemented")
+    logger.info("Telegram bot starting in Polling mode")
+    await bot.set_my_commands(
+        [
+            BotCommand(command="start", description="Запустить бота"),
+            BotCommand(command="clear_history", description="Очистить историю диалога"),
+        ]
+    )
+    await bot.delete_webhook(drop_pending_updates=False)
+    await dp.start_polling(bot)

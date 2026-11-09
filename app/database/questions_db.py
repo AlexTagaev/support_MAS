@@ -13,8 +13,8 @@ from sqlalchemy import select
 
 from app.database.models import Base, UniqueQuestion
 from app.config import settings
-from openai import OpenAI
 from loguru import logger
+from app.core.provider_clients import get_async_client
 
 DATABASE_URL = "sqlite+aiosqlite:///./data/database.db"
 
@@ -30,16 +30,21 @@ class QuestionsDB:
     """
     def __init__(self):
         """Инициализирует OpenAI-клиент для вычисления embeddings."""
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
     async def init_db(self):
         """Создаёт таблицы в БД при первом запуске."""
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    def _get_embedding(self, text: str) -> np.ndarray:
+    async def check_db(self) -> bool:
+        async with engine.connect() as conn:
+            await conn.execute(select(1))
+        return True
+
+    async def _get_embedding(self, text: str) -> np.ndarray:
         """Возвращает embedding в виде numpy-массива."""
-        response = self.client.embeddings.create(
+        client = get_async_client()
+        response = await client.embeddings.create(
             input=text,
             model="text-embedding-3-small"
         )
@@ -54,7 +59,7 @@ class QuestionsDB:
 
     async def add_question(self, question: str, source: str) -> bool:
         """Добавление вопроса с проверкой на уникальность."""
-        new_emb = self._get_embedding(question)
+        new_emb = await self._get_embedding(question)
         
         async with async_session() as session:
             result = await session.execute(select(UniqueQuestion))

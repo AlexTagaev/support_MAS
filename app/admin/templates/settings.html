@@ -27,8 +27,9 @@
         <h5>OpenAI</h5>
         <div class="mb-3">
             <label for="openai-api-key" class="form-label">OPENAI_API_KEY</label>
-            <input type="text" id="openai-api-key" class="form-control"
-                   value="{{ openai_api_key }}">
+            <input type="password" id="openai-api-key" class="form-control" autocomplete="new-password"
+                   placeholder="{% if openai_key_configured %}Ключ сохранён; пустое поле оставит его без изменений{% else %}Введите API ключ{% endif %}">
+            <div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="clear-openai-key"><label class="form-check-label" for="clear-openai-key">Удалить сохранённый ключ</label></div>
         </div>
         <div class="mb-3">
             <label for="openai-api-base"
@@ -43,8 +44,9 @@
         <div class="mb-3">
             <label for="proxiapi-api-key"
                    class="form-label">PROXIAPI_API_KEY</label>
-            <input type="text" id="proxiapi-api-key" class="form-control"
-                   value="{{ proxiapi_api_key }}">
+            <input type="password" id="proxiapi-api-key" class="form-control" autocomplete="new-password"
+                   placeholder="{% if proxiapi_key_configured %}Ключ сохранён; пустое поле оставит его без изменений{% else %}Введите API ключ{% endif %}">
+            <div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="clear-proxiapi-key"><label class="form-check-label" for="clear-proxiapi-key">Удалить сохранённый ключ</label></div>
         </div>
         <div class="mb-3">
             <label for="proxiapi-api-base"
@@ -56,6 +58,24 @@
         <button onclick="saveAiSettings()" class="btn btn-primary">
             Сохранить настройки
         </button>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-body">
+        <h3>Jivo</h3>
+        <p role="status" class="alert alert-info">{% if jivo.configured %}Параметры сохранены. Приём вебхуков и ответы Jivo пока не подключены.{% else %}Jivo пока не настроен. Приём вебхуков пока не подключён.{% endif %}</p>
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="jivo-enabled" {% if jivo.enabled %}checked{% endif %}>
+            <label class="form-check-label" for="jivo-enabled">Подготовить подключение Jivo</label>
+        </div>
+        <div class="mb-3"><label for="jivo-bot-token" class="form-label">Токен бота</label>
+            <input type="password" id="jivo-bot-token" class="form-control" autocomplete="new-password" placeholder="{% if jivo.configured %}Токен сохранён; пустое поле оставит его без изменений{% else %}Введите токен{% endif %}"></div>
+        <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="clear-jivo-token"><label class="form-check-label" for="clear-jivo-token">Удалить сохранённый токен</label></div>
+        <div class="mb-3"><label for="jivo-webhook-secret" class="form-label">Секрет вебхука (если потребуется)</label>
+            <input type="password" id="jivo-webhook-secret" class="form-control" autocomplete="new-password" placeholder="{% if jivo.has_webhook_secret %}Секрет сохранён; пустое поле оставит его без изменений{% else %}Введите секрет{% endif %}"></div>
+        <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="clear-jivo-secret"><label class="form-check-label" for="clear-jivo-secret">Удалить сохранённый секрет</label></div>
+        <button onclick="saveJivoSettings()" class="btn btn-outline-primary">Сохранить настройки Jivo</button>
     </div>
 </div>
 
@@ -75,10 +95,12 @@ function validateAiSettings() {
     if (!model) {
         return 'Поле AI_MODEL не должно быть пустым.';
     }
-    if (provider === 'openai' && !openaiKey) {
+    const openaiConfigured = {{ 'true' if openai_key_configured else 'false' }};
+    const proxiapiConfigured = {{ 'true' if proxiapi_key_configured else 'false' }};
+    if (provider === 'openai' && !openaiKey && !openaiConfigured) {
         return 'Для OpenAI укажите OPENAI_API_KEY.';
     }
-    if (provider === 'proxiapi' && !proxiapiKey) {
+    if (provider === 'proxiapi' && !proxiapiKey && !proxiapiConfigured) {
         return 'Для ProxiAPI укажите PROXIAPI_API_KEY.';
     }
     if (provider === 'proxiapi' && !proxiapiBase) {
@@ -121,6 +143,7 @@ async function saveAiSettings() {
         'openai_api_key',
         document.getElementById('openai-api-key').value
     );
+    formData.append('clear_openai_api_key', document.getElementById('clear-openai-key').checked ? 'true' : '');
     formData.append(
         'openai_api_base',
         document.getElementById('openai-api-base').value
@@ -129,6 +152,7 @@ async function saveAiSettings() {
         'proxiapi_api_key',
         document.getElementById('proxiapi-api-key').value
     );
+    formData.append('clear_proxiapi_api_key', document.getElementById('clear-proxiapi-key').checked ? 'true' : '');
     formData.append(
         'proxiapi_api_base',
         document.getElementById('proxiapi-api-base').value
@@ -148,6 +172,19 @@ async function saveAiSettings() {
     } else {
         alert(data.message || 'Ошибка сохранения настроек.');
     }
+}
+
+async function saveJivoSettings() {
+    const formData = new FormData();
+    formData.append('enabled', document.getElementById('jivo-enabled').checked ? 'true' : 'false');
+    formData.append('bot_token', document.getElementById('jivo-bot-token').value);
+    formData.append('webhook_secret', document.getElementById('jivo-webhook-secret').value);
+    formData.append('clear_bot_token', document.getElementById('clear-jivo-token').checked ? 'true' : 'false');
+    formData.append('clear_webhook_secret', document.getElementById('clear-jivo-secret').checked ? 'true' : 'false');
+    const response = await fetch('/admin/api/settings/jivo', {method: 'POST', body: formData});
+    const result = await response.json();
+    alert(result.message || 'Настройки сохранены.');
+    if (response.ok) window.location.reload();
 }
 </script>
 {% endblock %}

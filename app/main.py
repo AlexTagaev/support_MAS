@@ -1,68 +1,80 @@
-"""Точка входа FastAPI приложения.
-
-Задачи модуля:
-- инициализация FastAPI и подключение роутеров;
-- запуск фоновых компонентов (например, Telegram-бота);
-- health endpoint для инфраструктуры/мониторинга.
-"""
+"""FastAPI entry point and application lifecycle."""
 
 import asyncio
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from fastapi import Request
+from fastapi import FastAPI, HTTPException, Request, status
 from loguru import logger
 
 from app.admin.routes import router as admin_router
 from app.config import settings
-from app.database.questions_db import QuestionsDB
+from app.core.provider_clients import close_async_clients
+from app.core.rag_engine import get_rag_engine
+from app.database.questions_db import QuestionsDB, engine
 from app.integrations.jivo_webhook import router as jivo_router
-from app.integrations.telegram_bot import start_bot
+from app.integrations.telegram_bot import bot, drain_question_analytics, start_bot
 from app.utils.logger import setup_logger
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    setup_logger()
+    if settings.TELEGRAM_USE_WEBHOOK:
+        raise RuntimeError("Telegram webhook mode is not implemented; set TELEGRAM_USE_WEBHOOK=false")
+
+    db = QuestionsDB()
+    await db.init_db()
+    app.state.db = db
+    app.state.telegram_task = asyncio.create_task(start_bot(), name="telegram-polling")
+    logger.info("Application started in Telegram polling mode")
+    try:
+        yield
+    finally:
+        app.state.telegram_task.cancel()
+        await asyncio.gather(app.state.telegram_task, return_exceptions=True)
+        await drain_question_analytics()
+        await bot.session.close()
+        await engine.dispose()
+        await close_async_clients()
+
 
 app = FastAPI(
     title="Школа Агеева - Нейро-техподдержка",
     version="1.0.0",
-    debug=settings.DEBUG
+    debug=settings.DEBUG,
+    lifespan=lifespan,
 )
-
-# Роутеры подключаем на старте, чтобы они попали в OpenAPI.
 app.include_router(admin_router)
 app.include_router(jivo_router)
 
-@app.on_event("startup")
-async def startup_event():
-    """Инициализация сервисов при старте приложения."""
-    setup_logger()
-    
-    # База для аналитики уникальных вопросов.
-    db = QuestionsDB()
-    await db.init_db()
-    
-    # Telegram-бот запускаем отдельной задачей, чтобы не блокировать API.
-    asyncio.create_task(start_bot())
-    
-    logger.info("Application started successfully")
 
 @app.get("/health")
-async def health_check():
-    """Простой health endpoint для инфраструктуры."""
-    return {
-        "status": "healthy",
-        "version": "1.0.0",
-        "checks": {
-            "llm_api": "ok",
-            "database": "ok",
-            "faiss_index": "ok"
-        }
-    }
+async def health_check(request: Request):
+    """Report real local readiness without calling paid AI APIs."""
+    checks = {"database": "error", "faiss_index": "error", "telegram_polling": "error"}
+    try:
+        await request.app.state.db.check_db()
+        checks["database"] = "ok"
+    except Exception:
+        logger.exception("Database readiness check failed")
+
+    rag = get_rag_engine()
+    if rag.index is not None:
+        checks["faiss_index"] = "ok"
+    task = getattr(request.app.state, "telegram_task", None)
+    if task is not None and not task.done():
+        checks["telegram_polling"] = "ok"
+
+    ready = all(value == "ok" for value in checks.values())
+    if not ready:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"status": "not_ready", "checks": checks})
+    return {"status": "healthy", "version": "1.0.0", "checks": checks}
+
 
 @app.post("/api/telegram/webhook")
-async def telegram_webhook(request: Request):
-    """Webhook endpoint для Telegram (когда включён режим webhook)."""
-    if settings.TELEGRAM_USE_WEBHOOK:
-        update = await request.json()
-        # В режиме webhook сюда должен приходить update от Telegram.
-        # В текущей реализации обработка webhook вынесена в режим polling,
-        # чтобы не усложнять деплой: эндпоинт сохранён для расширения.
-        return {"status": "ok"}
-    return {"status": "webhook disabled"}
+async def telegram_webhook():
+    """Webhook delivery is not implemented; polling is the supported mode."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Telegram webhook mode is not implemented; use polling",
+    )

@@ -3,7 +3,6 @@
 ![Version](https://img.shields.io/badge/version-2.0.0--refactored-blue)
 ![Python](https://img.shields.io/badge/python-3.11+-green)
 ![Docker](https://img.shields.io/badge/docker-optimized-blue)
-![Size](https://img.shields.io/badge/image_size-~6_GB-success)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 Интеллектуальная система автоматической технической поддержки на базе **GPT-4.1-mini** с использованием технологии **RAG (Retrieval-Augmented Generation)** для консультирования учеников и посетителей Школы Михаила Агеева.
@@ -11,67 +10,44 @@
 ## 🌟 Основные возможности
 
 - **🤖 Умные ответы**: Генерация ответов на основе векторной базы знаний (Markdown + FAISS).
-- **💬 Мультиканальность**: Поддержка Telegram Bot и Jivo Chat.
-- **🧠 Память диалога**: Удержание контекста последних 5 сообщений для связного общения.
+- **💬 Канал пилота**: Telegram Bot. В админке можно заранее сохранить настройки Jivo, но обработка его вебхуков ещё не подключена.
+- **🧠 Память диалога**: Контекст последних двух пар сообщений хранится в памяти до одного часа.
 - **📊 Аналитика**: Автоматическое выявление и сохранение уникальных вопросов пользователей с векторным сравнением.
 - **⚙️ Админ-панель**: Веб-интерфейс для управления базой знаний, просмотра статистики и тестирования бота.
-- **🛡️ Безопасность**: Rate Limiting (20 запросов/час), защита от спама и Basic Auth для админки.
+- **🛡️ Безопасность**: Rate Limiting (20 запросов на пользователя в чате за час), защита от спама и Basic Auth для админки.
 
 ---
 
-## 🆕 Что нового в v2.0 (Refactored)
+## Статус пилотной конфигурации
 
-### ⚡ Производительность
-- **Размер образа**: 15-20 GB → **~6 GB** (экономия 10+ GB!)
-- **Время сборки**: 10-15 мин → **3-5 мин** (3x быстрее)
-- **Время старта**: 15-20 сек → **5-10 сек** (2-3x быстрее)
-- **RAM idle**: 1 GB → **512 MB** (2x меньше)
-- **RAM под нагрузкой**: 3 GB → **1.5-2 GB** (1.5-2x меньше)
-
-### 🔄 Технические улучшения
-- ✅ **OpenAI Embeddings API** (text-embedding-3-small) — уже использовался с самого начала
-- ✅ **Multi-stage Docker build** для минимизации размера образа
-- ✅ Удалены неиспользуемые тяжелые зависимости:
-  - ❌ `sentence-transformers` (~2.5 GB)
-  - ❌ `torch` (~1.5 GB)
-  - ❌ `tensorflow` (не был в проекте)
-  - ❌ `aiohttp` (заменен на `httpx`)
-- ✅ Оптимизированный `requirements.txt` (только необходимое)
-- ✅ Создан `requirements-dev.txt` для разработки
-- ✅ Добавлен `.dockerignore` для исключения ненужных файлов из образа
-- ✅ Lazy imports для тяжелых библиотек (pandas)
-- ✅ Health checks в Docker Compose
-- ✅ Ограничения ресурсов контейнера (CPU, RAM)
-- ✅ Миграционный скрипт для пересоздания индексов
-
-### 💰 Экономия ресурсов
-- **Хранение**: $2/мес → **$0.60/мес** (экономия $1.40)
-- **VPS RAM**: $15/мес → **$8/мес** (экономия $7)
-- **OpenAI Embeddings**: ~$1-2/мес (новая статья расходов, но покрывается экономией)
-- **Итого**: $17/мес → **$9.60-10.60/мес** (экономия ~40%)
+- Telegram работает через long polling; webhook-режим при запуске отклоняется.
+- В стандартной конфигурации админка доступна через localhost на сервере; используйте SSH-туннель. Опциональный профиль Nginx открывает HTTP-порт 80 без TLS и не подходит для публичной эксплуатации до настройки HTTPS.
+- Jivo выключен по умолчанию. Админка сохраняет его настройки, но endpoint вебхука пока отвечает HTTP 503.
+- Контейнер ограничен одним CPU и 1200 MB памяти. Фактическое потребление зависит от размера индекса, запросов и используемого AI-провайдера; измерения нагрузки ещё не проводились.
+- Ответы и embeddings требуют сети и действующего ключа выбранного провайдера.
 
 ---
 
 ## 📋 Требования
 
-### Минимальные системные требования
-- **CPU**: 1 core
-- **RAM**: 1 GB (рекомендуется 2 GB)
-- **Диск**: 10 GB свободного места
-- **ОС**: Linux (Ubuntu 20.04+), macOS, Windows 10+ с WSL2
-- **Docker**: 20.10+
-- **Docker Compose**: 2.0+
+### Требования для пилотного сервера
+- **CPU**: 1 vCPU
+- **RAM**: 2 GB; контейнер ограничен 1200 MB, чтобы оставить память ОС
+- **Диск**: от 10 GB свободного места; рабочие данные находятся в `data/` и `logs/`
+- **ОС**: Ubuntu Server 24.04 LTS без графического интерфейса
+- **Управление**: SSH; админка по SSH-туннелю
+- **Docker Engine** и Compose plugin (`docker compose`)
 
-### API ключи
-- **OpenAI API Key** (обязательно): https://platform.openai.com/api-keys
-- **Telegram Bot Token** (обязательно): Получить у @BotFather
-- **Jivo Bot Token** (опционально): https://www.jivo.ru/
+### Ключи
+- Ключ выбранного AI-провайдера: OpenAI или ProxiAPI
+- **Telegram Bot Token**: получить у @BotFather
+- Jivo по умолчанию выключен. Настройки Jivo в админке не включают обработку вебхуков.
 
 ---
 
 ## 🚀 Быстрый старт
 
-### 1. Клонирование репозитория
+### 1. Клонирование репозитория на Ubuntu Server
 ```bash
 git clone <repository-url>
 cd support_MAS
@@ -89,7 +65,9 @@ cp .env.example .env
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-your-actual-key-here
 OPENAI_API_BASE=
-PROXIAPI_API_KEY=your-proxyapi-key
+# Если используете ProxiAPI, выберите LLM_PROVIDER=proxiapi,
+# оставьте OPENAI_API_KEY пустым и заполните PROXIAPI_API_KEY.
+PROXIAPI_API_KEY=
 PROXIAPI_API_BASE=https://api.proxyapi.ru/openai/v1
 
 # Telegram
@@ -98,12 +76,24 @@ TELEGRAM_USE_WEBHOOK=false
 
 # Admin Panel
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD_HASH=your_secure_password
+ADMIN_PASSWORD_HASH=replace_with_bcrypt_hash
+```
+
+Оставьте `TELEGRAM_USE_WEBHOOK=false`: в пилоте используется polling. Перед первым запуском соберите образ и создайте bcrypt-хеш пароля админки:
+```bash
+docker compose build app
+docker compose run --rm --no-deps app python -c 'from getpass import getpass; from passlib.context import CryptContext; print(CryptContext(schemes=["bcrypt"]).hash(getpass("Пароль админки: ")))'
+```
+Скопируйте выведенный хеш в `ADMIN_PASSWORD_HASH` в `.env`, затем создайте каталоги и ограничьте доступ к секретам:
+```bash
+mkdir -p data/faiss_index logs
+chmod 700 data logs
+chmod 600 .env
 ```
 
 ### 3. Запуск через Docker (рекомендуется)
 ```bash
-docker-compose up -d --build
+docker compose up -d
 ```
 
 **Ожидаемое время:** 3-5 минут для первой сборки.
@@ -112,19 +102,31 @@ docker-compose up -d --build
 После запуска необходимо векторизовать базу знаний:
 
 **Вариант A (через админку):**
-1. Откройте админку: http://localhost:8000/admin
-2. Перейдите в раздел **База знаний**
-3. Нажмите кнопку **"Пересоздать индексы"**
-4. Дождитесь уведомления об успешном завершении
+1. С компьютера администратора создайте SSH-туннель:
+   ```bash
+   ssh -L 8000:127.0.0.1:8000 <user>@<server-ip>
+   ```
+2. Откройте админку: http://localhost:8000/admin
+3. Перейдите в раздел **База знаний**
+4. Нажмите кнопку **"Пересоздать индексы"**
+5. Дождитесь уведомления об успешном завершении
 
 **Вариант B (через миграционный скрипт):**
 ```bash
-# На хосте (в корне проекта)
-python migrate_embeddings.py
-
-# Альтернатива: запуск внутри контейнера одной командой
-docker exec -it neuro-support python -c "from app.core.rag_engine import RAGEngine; from app.config import settings; RAGEngine(settings.KNOWLEDGE_BASE_PATH, settings.FAISS_INDEX_PATH).rebuild_index()"
+# Запустите до приложения (или после его остановки)
+docker compose run --rm --no-deps app python migrate_embeddings.py
 ```
+Скрипт работает отдельным процессом. Если приложение уже запущено, используйте пересборку из админки, чтобы обновить индекс и в его памяти.
+
+Compose публикует порт приложения только на `127.0.0.1`; он недоступен напрямую извне VPS. Каталог `data/` сохраняет SQLite, FAISS, интеграционные настройки и базу знаний; `logs/` сохраняет файловые логи. Docker-журнал ограничен по размеру.
+
+Перед обновлением и редактированием базы знаний сделайте резервную копию:
+```bash
+docker compose down
+tar -czf support-data-$(date +%F-%H%M).tar.gz data logs .env
+docker compose up -d
+```
+Архив содержит секреты из `.env` и настроек интеграций; храните его с ограниченным доступом и не добавляйте в Git.
 
 ### 5. Проверка работоспособности
 ```bash
@@ -135,14 +137,10 @@ curl http://localhost:8000/health
 ```json
 {
   "status": "healthy",
-  "version": "2.0.0-refactored",
-  "checks": {
-    "llm_api": "ok",
-    "database": "ok",
-    "faiss_index": "ok"
-  }
+  "checks": { "database": "ok", "faiss_index": "ok", "telegram_polling": "ok" }
 }
 ```
+До создания FAISS-индекса проверка готовности вернёт HTTP 503; после успешной пересборки она должна стать healthy.
 
 ---
 
@@ -153,9 +151,9 @@ curl http://localhost:8000/health
 | Переменная | Описание | По умолчанию | Обязательна |
 |------------|----------|--------------|-------------|
 | `LLM_PROVIDER` | Провайдер LLM (`openai`/`proxiapi`) | `openai` | ✅ |
-| `OPENAI_API_KEY` | API ключ OpenAI | - | ✅ |
+| `OPENAI_API_KEY` | API ключ OpenAI, если выбран провайдер `openai` | - | Только для OpenAI |
 | `OPENAI_API_BASE` | Base URL OpenAI (обычно пусто) | - | ❌ |
-| `PROXIAPI_API_KEY` | API ключ ProxiAPI | - | ✅ |
+| `PROXIAPI_API_KEY` | API ключ ProxiAPI | - | Только для ProxiAPI |
 | `PROXIAPI_API_BASE` | Base URL ProxiAPI | `https://api.proxyapi.ru/openai/v1` | ❌ |
 | `TELEGRAM_BOT_TOKEN` | Токен Telegram бота | - | ✅ |
 | `TELEGRAM_WEBHOOK_URL` | URL для webhook (если используется) | - | ❌ |
@@ -163,14 +161,14 @@ curl http://localhost:8000/health
 | `JIVO_BOT_TOKEN` | Токен Jivo бота | - | ❌ |
 | `JIVO_WEBHOOK_SECRET` | Секрет для Jivo webhook | - | ❌ |
 | `ADMIN_USERNAME` | Логин для админки | `admin` | ✅ |
-| `ADMIN_PASSWORD_HASH` | Пароль для админки | - | ✅ |
+| `ADMIN_PASSWORD_HASH` | Bcrypt-хеш пароля админки | - | ✅ |
 | `AI_MODEL` | Общая модель для OpenAI/ProxiAPI | `gpt-4.1-mini` | ❌ |
 | `AI_TEMPERATURE` | Температура генерации | `0.7` | ❌ |
 | `AI_MAX_TOKENS` | Максимум токенов в ответе | `800` | ❌ |
 | `CHUNK_SIZE` | Размер чанка для RAG | `1000` | ❌ |
 | `TOP_K_RESULTS` | Количество релевантных фрагментов | `3` | ❌ |
 | `SIMILARITY_THRESHOLD` | Порог схожести вопросов (0-1) | `0.85` | ❌ |
-| `RATE_LIMIT_REQUESTS` | Лимит запросов на пользователя | `20` | ❌ |
+| `RATE_LIMIT_REQUESTS` | Лимит запросов на пару чат/пользователь за окно | `20` | ❌ |
 | `RATE_LIMIT_WINDOW` | Временное окно (секунды) | `3600` | ❌ |
 | `MAX_CONTEXT_MESSAGES` | Размер истории диалога | `5` | ❌ |
 | `LOG_LEVEL` | Уровень логирования | `INFO` | ❌ |
@@ -236,7 +234,7 @@ support_MAS/
 │   │   └── questions_db.py # Уникальные вопросы
 │   ├── integrations/       # Внешние интеграции
 │   │   ├── telegram_bot.py # Telegram bot (aiogram)
-│   │   └── jivo_webhook.py # Jivo Chat webhook
+│   │   └── jivo_webhook.py # Заготовка вебхука Jivo (503 до реализации)
 │   ├── utils/              # Вспомогательные утилиты
 │   │   └── logger.py       # Настройка логирования
 │   ├── config.py           # Конфигурация (Pydantic Settings)
@@ -269,7 +267,7 @@ support_MAS/
 
 **Интеграции:**
 - Aiogram 3.x (Telegram Bot API)
-- HTTPx (HTTP клиент для Jivo и других API)
+- HTTPX connection pooling через OpenAI SDK
 
 **База данных:**
 - SQLite + SQLAlchemy (Async)
@@ -288,29 +286,27 @@ support_MAS/
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Каналы связи                              │
-│  ┌──────────────┐              ┌──────────────┐             │
-│  │  Telegram    │              │  Jivo Chat   │             │
-│  │     Bot      │              │   (webhook)  │             │
-│  └──────┬───────┘              └──────┬───────┘             │
-│         │                             │                      │
-└─────────┼─────────────────────────────┼──────────────────────┘
-          │                             │
-          ▼                             ▼
+│                    Канал пилота                             │
+│                 ┌──────────────┐                             │
+│                 │ Telegram Bot │                             │
+│                 └──────┬───────┘                             │
+└────────────────────────┼────────────────────────────────────┘
+                         │
+                         ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                  FastAPI Backend                             │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │              Message Handler                           │  │
-│  │  • Rate Limiting (20 req/user/hour)                   │  │
+│  │  • Rate Limiting (20 req/chat-user/hour)              │  │
 │  │  • Spam Filter                                        │  │
-│  │  • Context Manager (5 messages, TTL 1h)              │  │
+│  │  • Context Manager (2 exchanges, TTL 1h)             │  │
 │  └───────────────┬───────────────────────────────────────┘  │
 │                  │                                           │
 │                  ▼                                           │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │              RAG Engine                                │  │
 │  │  • FAISS Vector Search (IndexFlatL2)                  │  │
-│  │  • OpenAI Embeddings (text-embedding-3-small)        │  │
+│  │  • Embeddings (text-embedding-3-small)                │  │
 │  │  • Top-K Relevance Scoring                           │  │
 │  └───────────────┬───────────────────────────────────────┘  │
 │                  │                                           │
@@ -378,15 +374,16 @@ flake8 app/
 curl http://localhost:8000/health
 ```
 
+Проверка показывает локальную готовность приложения: база, FAISS-индекс и задача Telegram polling. Внешний AI API не вызывается из healthcheck.
+
 Ответ:
 ```json
 {
   "status": "healthy",
-  "version": "2.0.0-refactored",
   "checks": {
-    "openai_api": "ok",
     "database": "ok",
-    "faiss_index": "ok"
+    "faiss_index": "ok",
+    "telegram_polling": "ok"
   }
 }
 ```
@@ -512,13 +509,14 @@ Telegram pipeline user=... sent=... rag_ms=... llm_ms=... send_ms=... total_ms=.
 **Решения:**
 1. **Неверные данные:** Проверьте `ADMIN_USERNAME` и `ADMIN_PASSWORD_HASH` в `.env`
 2. **Кэш браузера:** Откройте в режиме инкогнито
-3. **Пробелы в .env:** Убедитесь, что нет лишних пробелов:
+3. **Формат пароля:** `ADMIN_PASSWORD_HASH` должен содержать bcrypt-хеш, а не обычный пароль. Сгенерируйте его командой из раздела быстрого старта.
+4. **Пробелы в .env:** Убедитесь, что нет лишних пробелов:
    ```env
    ADMIN_USERNAME=admin
-   ADMIN_PASSWORD_HASH=mypassword
+   ADMIN_PASSWORD_HASH=$2b$12$...
    # НЕ: ADMIN_USERNAME = admin
    ```
-4. Перезапустите контейнер: `docker-compose restart app`
+5. Перезапустите контейнер: `docker compose restart app`
 
 ---
 
@@ -577,13 +575,8 @@ curl http://localhost:8000/health
 
 ## ❓ FAQ
 
-### Какой размер Docker образа?
-~6 GB (после оптимизации в v2.0). Ранее было 15-20 GB.
-
 ### Сколько стоит OpenAI API?
-- **GPT-4.1-mini**: ~$0.15 / 1M входящих токенов, ~$0.60 / 1M исходящих
-- **text-embedding-3-small**: ~$0.02 / 1M токенов
-- **Примерная стоимость**: $10-30/мес при средней нагрузке (100-300 запросов/день)
+Стоимость зависит от текущей цены выбранной модели, числа и длины запросов, а также embeddings. Проверьте актуальные тарифы у [OpenAI](https://openai.com/api/pricing/) или выбранного провайдера; фиксированная месячная оценка без измерений не приводится.
 
 ### Можно ли использовать ProxiAPI вместо OpenAI?
 Да. Укажите в `.env`:
@@ -592,13 +585,11 @@ curl http://localhost:8000/health
 - `PROXIAPI_API_BASE=https://api.proxyapi.ru/openai/v1`
 
 То же самое можно настроить через `/admin/settings` без ручного
-редактирования файла.
+редактирования файла. Настройки применяются сразу и сохраняются в `.env`,
+который приложение читает и после перезапуска контейнера.
 
 ### Можно ли использовать другую AI модель?
-Да, измените `AI_MODEL` в `.env`. Поддерживаемые модели OpenAI:
-- `gpt-4.1-mini` (рекомендуется, оптимально по цене/качеству)
-- `gpt-4` (дороже, но умнее)
-- `gpt-3.5-turbo` (дешевле, но менее точный)
+Да. Измените `AI_MODEL` в `.env` или в админке и укажите модель, поддерживаемую выбранным провайдером. Текущая настройка — `gpt-4.1-mini`; перед публичным запуском проверьте её доступность и срок поддержки в [каталоге моделей OpenAI](https://developers.openai.com/api/docs/models/gpt-4.1-mini) либо у своего провайдера.
 
 ### Работает ли система без интернета?
 Нет. Требуется доступ к API выбранного провайдера (OpenAI или ProxiAPI)
@@ -611,9 +602,7 @@ curl http://localhost:8000/health
 3. Заменить OpenAI Embeddings на локальные (sentence-transformers вернется, +2.5 GB к образу)
 
 ### Сколько вопросов в час может обработать?
-При конфигурации по умолчанию:
-- **Лимит на пользователя**: 20 запросов/час
-- **Общая пропускная способность**: зависит от ресурсов сервера, ~100-200 запросов/мин
+На пару чат/пользователь действует лимит по умолчанию 20 запросов за час. Общая пропускная способность не измерялась и зависит в основном от задержки и лимитов AI-провайдера; перед увеличением аудитории проведите нагрузочную проверку.
 
 ### Как добавить новый канал связи (WhatsApp, Viber)?
 Создайте новый обработчик в `app/integrations/` по аналогии с `telegram_bot.py` или `jivo_webhook.py`.
@@ -659,8 +648,8 @@ curl http://localhost:8000/health
 
 ### v1.0.0 (2026-02-13)
 #### 🎉 Первый релиз
-- 🤖 Telegram Bot integration (aiogram 3.x)
-- 💬 Jivo Chat webhook integration
+- 🤖 Telegram Bot (aiogram 3.x, polling)
+- ⚙️ Настройки Jivo в админке; обработка вебхуков не подключена
 - 📚 RAG система на базе FAISS + OpenAI Embeddings
 - 🎨 Веб-админка (FastAPI + Jinja2 + Bootstrap 5)
 - 📊 Аналитика уникальных вопросов

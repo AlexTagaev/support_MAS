@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     """
     # AI провайдеры
     LLM_PROVIDER: Literal["openai", "proxiapi"] = "openai"
-    OPENAI_API_KEY: str
+    OPENAI_API_KEY: str = ""
     OPENAI_API_BASE: Optional[str] = None
     PROXIAPI_API_KEY: Optional[str] = None
     PROXIAPI_API_BASE: str = "https://api.proxyapi.ru/openai/v1"

@@ -4,9 +4,8 @@ from typing import Dict
 from typing import List
 
 from loguru import logger
-from openai import AsyncOpenAI
-
 from app.config import settings
+from app.core.provider_clients import get_async_client
 
 
 class AIClient:
@@ -14,20 +13,6 @@ class AIClient:
 
     def __init__(self):
         return
-
-    @staticmethod
-    def _build_client() -> AsyncOpenAI:
-        """Создает клиента по текущему провайдеру из настроек."""
-        provider = settings.LLM_PROVIDER
-        if provider == "proxiapi":
-            return AsyncOpenAI(
-                api_key=settings.PROXIAPI_API_KEY,
-                base_url=settings.PROXIAPI_API_BASE,
-            )
-        return AsyncOpenAI(
-            api_key=settings.OPENAI_API_KEY,
-            base_url=settings.OPENAI_API_BASE,
-        )
 
     async def generate_response(
         self,
@@ -38,7 +23,7 @@ class AIClient:
     ) -> str:
         """Генерирует ответ модели по вопросу и RAG-контексту."""
         try:
-            client = self._build_client()
+            client = get_async_client()
 
             # Backward-compatible: if placeholders are absent or broken, keep original prompt.
             try:
@@ -80,7 +65,7 @@ class AIClient:
                 presence_penalty=0.3,
             )
 
-            return response.choices[0].message.content
+            return response.choices[0].message.content or "Извините, не удалось сформировать ответ."
         except Exception as e:
             logger.error(f"AI generation error: {e}")
             return (
