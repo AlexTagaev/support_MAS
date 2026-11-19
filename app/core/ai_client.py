@@ -65,8 +65,8 @@ class AIClient:
                 "model": settings.AI_MODEL,
                 "messages": messages,
             }
-            if settings.AI_MODEL.lower().startswith("gpt-6-luna"):
-                # GPT-6 Luna uses max_completion_tokens; the pinned OpenAI
+            if settings.AI_MODEL.lower().startswith(("gpt-6-luna", "gpt-6.1-terra")):
+                # GPT-6 Luna and GPT-6.1 Terra use max_completion_tokens; the pinned OpenAI
                 # SDK predates this field, so send new API fields through its
                 # documented extra_body passthrough.
                 request_options["extra_body"] = {
