@@ -50,6 +50,9 @@ logs/
 *.sqlite3
 data/database.db
 
+# Integration credentials managed through the admin UI
+data/integration_settings.json
+
 # FAISS indices
 data/faiss_index/
 

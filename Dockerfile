@@ -1,47 +1,36 @@
 # Multi-stage build для минимизации размера образа
-FROM python:3.11-slim-bullseye AS builder
-
-# Установка только необходимых build-зависимостей
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.11-slim-bookworm AS builder
 
 # Создание wheels для ускорения установки
 WORKDIR /tmp
 COPY requirements.txt .
-RUN pip wheel --no-cache-dir --no-deps --wheel-dir /wheels -r requirements.txt
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 
 # Финальный образ
-FROM python:3.11-slim-bullseye
+FROM python:3.11-slim-bookworm
 
 # Метаданные
 LABEL maintainer="Школа Михаила Агеева"
 LABEL version="2.0.0-refactored"
 LABEL description="Нейро-техподдержка с оптимизированным размером образа"
 
-# Установка только runtime зависимостей
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
 # Копирование и установка wheels из builder
 COPY --from=builder /wheels /wheels
-RUN pip install --no-cache-dir /wheels/* \
-    && rm -rf /wheels \
-    && find /usr/local -type d -name __pycache__ -exec rm -r {} + || true \
-    && find /usr/local -type f -name "*.pyc" -delete \
-    && find /usr/local -type f -name "*.pyo" -delete \
-    && rm -rf /usr/local/lib/python3.11/site-packages/*/tests \
-    && rm -rf /usr/local/lib/python3.11/site-packages/*/test \
-    && rm -rf /usr/local/share/doc \
-    && rm -rf /usr/local/share/man
+RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
+
+# Keep cleanup separate from dependency installation so cleanup cannot hide a
+# failed pip install through shell error handling.
+RUN find /usr/local -type d -name __pycache__ -prune -exec rm -rf {} + \
+    && find /usr/local -type f \( -name "*.pyc" -o -name "*.pyo" \) -delete \
+    && find /usr/local/lib/python3.11/site-packages -type d \( -name tests -o -name test \) -prune -exec rm -rf {} + \
+    && rm -rf /usr/local/share/doc /usr/local/share/man
 
 # Копирование приложения
 COPY ./app /app/app
 COPY ./data /app/data
+COPY ./migrate_embeddings.py /app/migrate_embeddings.py
 
 # Создание необходимых директорий
 RUN mkdir -p /app/logs /app/data/faiss_index
@@ -53,7 +42,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
 
 # Запуск приложения
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

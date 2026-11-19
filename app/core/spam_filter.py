@@ -49,8 +49,8 @@ class SpamFilter:
         if user_id in self.blacklist:
             return True
             
-        # Слишком короткое или длинное
-        if len(message) < 3 or len(message) > 2000:
+        # Короткие подтверждения и ответы «да/нет» допустимы в диалоге.
+        if len(message) > 2000:
             return True
             
         # Повторяющиеся сообщения

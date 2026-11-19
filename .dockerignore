@@ -46,8 +46,11 @@ data/*.db
 data/faiss_index/
 
 # Config examples
-.env.example
-.env.local
+.env
+.env.*
+
+# Locally stored integration credentials
+data/integration_settings.json
 
 # Docker
 docker-compose.yml

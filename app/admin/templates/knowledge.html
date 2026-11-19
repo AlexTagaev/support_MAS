@@ -25,7 +25,12 @@ async function saveKnowledge() {
 async function rebuildIndex() {
     if (!confirm('Это может занять время. Продолжить?')) return;
     const response = await fetch('/admin/api/rebuild', { method: 'POST' });
-    if (response.ok) alert('Индексы обновлены!');
+    const data = await response.json();
+    if (response.ok) {
+        alert('Индексы обновлены!');
+    } else {
+        alert(data.detail || 'Не удалось пересобрать индекс.');
+    }
 }
 </script>
 {% endblock %}

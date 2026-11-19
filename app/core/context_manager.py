@@ -21,7 +21,8 @@ class ContextManager:
             max_context: Максимум сообщений в истории на пользователя.
             ttl: Время жизни контекста в секундах с момента активности.
         """
-        self.max_context = max_context
+        # Histories are stored as complete user/assistant pairs.
+        self.max_context = max(2, int(max_context) // 2 * 2)
         self.ttl = ttl
         self.contexts = {}  # {user_id: deque([msg1, msg2, ...])}
         self.timestamps = {}  # {user_id: last_activity_time}
@@ -32,6 +33,14 @@ class ContextManager:
             self.contexts[user_id] = deque(maxlen=self.max_context)
         
         self.contexts[user_id].append({"role": role, "content": content})
+        self.timestamps[user_id] = time.time()
+
+    async def add_exchange(self, user_id: str, user_message: str, assistant_message: str):
+        """Append one complete exchange so history cannot contain half a turn."""
+        if user_id not in self.contexts:
+            self.contexts[user_id] = deque(maxlen=self.max_context)
+        self.contexts[user_id].append({"role": "user", "content": user_message})
+        self.contexts[user_id].append({"role": "assistant", "content": assistant_message})
         self.timestamps[user_id] = time.time()
 
     async def get_context(self, user_id: str) -> List[Dict]:
