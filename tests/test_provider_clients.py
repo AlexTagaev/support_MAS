@@ -72,8 +72,9 @@ class SimpleAsyncClient:
         self.close = AsyncMock()
 
 
-def test_ai_client_returns_chat_response_and_passes_context(monkeypatch):
-    monkeypatch.setattr(settings, "AI_MODEL", "gpt-6-luna")
+@pytest.mark.parametrize("model", ["gpt-6-luna", "gpt-6.1-terra"])
+def test_ai_client_returns_chat_response_and_passes_context(monkeypatch, model):
+    monkeypatch.setattr(settings, "AI_MODEL", model)
     response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Answer"))])
     create = AsyncMock(return_value=response)
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
@@ -90,7 +91,7 @@ def test_ai_client_returns_chat_response_and_passes_context(monkeypatch):
 
     assert result == "Answer"
     args = create.await_args.kwargs
-    assert args["model"] == "gpt-6-luna"
+    assert args["model"] == model
     assert args["extra_body"] == {
         "max_completion_tokens": settings.AI_MAX_TOKENS,
         "reasoning_effort": "medium",
@@ -226,7 +227,7 @@ def test_embedding_uses_shared_async_provider_client(monkeypatch, tmp_path):
     assert result == [0.25, 0.75]
     create.assert_awaited_once_with(input="input text", model="text-embedding-3-small")
 
-@pytest.mark.parametrize('model', ['gpt-6-luna', 'gpt-4.1-mini'])
+@pytest.mark.parametrize('model', ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-4.1-mini'])
 @pytest.mark.parametrize('second_reason', ['stop', 'length'])
 def test_truncated_response_is_regenerated_once(monkeypatch, model, second_reason):
     monkeypatch.setattr(settings, 'AI_MODEL', model)
@@ -240,6 +241,6 @@ def test_truncated_response_is_regenerated_once(monkeypatch, model, second_reaso
     assert 'Основная цель школы —' not in answer
     assert (answer == 'Полный ответ.') == (second_reason == 'stop')
     retry = create.await_args_list[1].kwargs
-    budget = retry['extra_body']['max_completion_tokens'] if model == 'gpt-6-luna' else retry['max_tokens']
+    budget = retry['extra_body']['max_completion_tokens'] if model in ('gpt-6-luna', 'gpt-6.1-terra') else retry['max_tokens']
     assert budget > settings.AI_MAX_TOKENS
     assert not any(m['content'] == 'Основная цель школы —' for m in retry['messages'])

@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     ADMIN_PASSWORD_HASH: str = ""
     
     # AI Configuration
-    AI_MODEL: str = "gpt-6-luna"
+    AI_MODEL: str = "gpt-6.1-terra"
     AI_TEMPERATURE: float = 0.7
     AI_MAX_TOKENS: int = 800
     AI_TOP_P: float = 0.9
