@@ -101,3 +101,30 @@ def test_conversation_keys_separate_private_and_group_history():
     group = SimpleNamespace(from_user=user, chat=SimpleNamespace(id=-100123))
 
     assert telegram_bot.conversation_key(private) != telegram_bot.conversation_key(group)
+
+@pytest.mark.parametrize('text', ['Короткий ответ.', 'слово ' * 2000, '😀' * 5000, 'я' * 9000])
+def test_telegram_splitting_preserves_all_text(text):
+    parts = telegram_bot.split_telegram_text(text)
+    assert ''.join(parts) == text
+    assert all(0 < len(p.encode('utf-16-le')) // 2 <= 4000 for p in parts)
+
+
+def test_long_answer_sends_every_part_in_order():
+    text = 'Ответ.\n' * 2000
+    message = SimpleNamespace(answer=AsyncMock())
+    assert asyncio.run(telegram_bot.safe_answer(message, text))
+    assert ''.join(c.args[0] for c in message.answer.await_args_list) == text
+
+
+def test_part_failure_stops_without_resending_delivered_parts(monkeypatch):
+    send = AsyncMock(side_effect=[True, False])
+    monkeypatch.setattr(telegram_bot, '_send_answer_part', send)
+    assert not asyncio.run(telegram_bot.safe_answer(object(), 'я' * 10000))
+    assert send.await_count == 2
+
+
+def test_blank_parts_are_not_sent():
+    message = SimpleNamespace(answer=AsyncMock())
+    assert asyncio.run(telegram_bot.safe_answer(message, 'я' * 4000 + ' ' * 5000))
+    assert message.answer.await_count == 1
+    assert not asyncio.run(telegram_bot.safe_answer(message, '   '))

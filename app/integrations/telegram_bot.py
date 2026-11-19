@@ -84,7 +84,41 @@ async def drain_question_analytics(timeout: float = 5.0) -> None:
         await asyncio.gather(*unfinished, return_exceptions=True)
 
 
+def split_telegram_text(text: str, limit: int = 4000) -> list[str]:
+    """Split plain text without loss, conservatively counting UTF-16 units."""
+    if limit < 2:
+        raise ValueError("Message limit must be at least 2")
+    parts = []
+    while text:
+        units = 0
+        end = 0
+        for char in text:
+            width = 2 if ord(char) > 0xFFFF else 1
+            if units + width > limit:
+                break
+            units += width
+            end += 1
+        if end < len(text):
+            boundary = max(text.rfind("\n", 0, end), text.rfind(" ", 0, end))
+            if boundary >= end // 2:
+                end = boundary + 1
+        parts.append(text[:end])
+        text = text[end:]
+    return parts
+
+
 async def safe_answer(message: Message, text: str) -> bool:
+    """Send every part in order, retrying only the current part."""
+    parts = [part for part in split_telegram_text(text) if part.strip()]
+    if not parts:
+        return False
+    for part in parts:
+        if not await _send_answer_part(message, part):
+            return False
+    return True
+
+
+async def _send_answer_part(message: Message, text: str) -> bool:
     """Send Telegram message with retries for transient network errors."""
     for attempt in range(1, SEND_MAX_RETRIES + 1):
         try:
@@ -180,7 +214,7 @@ async def _process_message(message: Message, user_id: str):
     if not rag_context.strip():
         await safe_answer(
             message,
-            "Не удалось найти информацию по этому запросу. Попробуйте переформулировать его или обратитесь в поддержку.",
+            "У меня нет точной информации по этому запросу. Уточните, пожалуйста, о какой программе или ситуации идёт речь.",
         )
         return
     rag_ms = (time.monotonic() - rag_started_at) * 1000

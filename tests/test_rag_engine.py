@@ -101,3 +101,104 @@ def test_search_without_index_does_not_request_embedding(tmp_path):
 
     engine._get_embedding = unexpected_embedding
     assert asyncio.run(engine.search("question")) == []
+
+
+def test_oversized_section_repeats_breadcrumb_and_preserves_code_facts(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "CHUNK_SIZE", 100)
+    monkeypatch.setattr(settings, "CHUNK_OVERLAP", 20)
+    engine, _ = make_engine(tmp_path)
+    text = "# Parent\n## Leaf\n\n" + "alpha fact; " * 20 + "\n\n```python\n# code heading\nanswer = 42\n```\n"
+    chunks = engine._chunk_text(text)
+
+    assert len(chunks) > 1
+    assert all(len(chunk) <= 100 for chunk in chunks)
+    assert all("# Parent\n## Leaf" in chunk for chunk in chunks)
+    combined = "\n".join(chunks)
+    assert "alpha fact" in combined
+    assert "# code heading" in combined
+    assert "answer = 42" in combined
+    assert not any(chunk.strip() in {"# Parent", "## Leaf", "---"} for chunk in chunks)
+
+
+def test_heading_breadcrumbs_follow_normal_section_blocks_and_siblings(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "CHUNK_SIZE", 96)
+    engine, _ = make_engine(tmp_path)
+    text = "# Parent\nparent intro\n## Leaf\n" + ("leaf fact; " * 12) + "\n## Sibling\nsibling fact"
+    chunks = engine._chunk_text(text)
+    leaf_chunks = [chunk for chunk in chunks if "leaf fact" in chunk]
+    sibling_chunks = [chunk for chunk in chunks if "sibling fact" in chunk]
+
+    assert leaf_chunks and sibling_chunks
+    assert all("# Parent\n## Leaf" in chunk for chunk in leaf_chunks)
+    assert all("# Parent\n## Sibling" in chunk for chunk in sibling_chunks)
+    assert all("## Leaf" not in chunk for chunk in sibling_chunks)
+
+
+def test_long_heading_path_preserves_body_within_chunk_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "CHUNK_SIZE", 80)
+    engine, _ = make_engine(tmp_path)
+    text = "# " + "Parent title " * 8 + "\n## " + "Leaf title " * 8 + "\ncritical body fact"
+    chunks = engine._chunk_text(text)
+    assert chunks
+    assert all(len(chunk) <= 80 for chunk in chunks)
+    assert any("critical body fact" in chunk for chunk in chunks)
+    assert all(not engine._is_structural_only(chunk) for chunk in chunks)
+
+
+def test_search_normalizes_vectors_and_filters_by_cosine_similarity(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "RAG_MIN_SIMILARITY", 0.8, raising=False)
+    engine, _ = make_engine(tmp_path)
+    async def varied_embedding(text):
+        return [1.0, 0.0] if text == "question" else [0.0, 1.0]
+    engine._get_embedding = varied_embedding
+    engine.metadata = [{"text": "orthogonal", "source": "test"}]
+    engine.index = __import__("faiss").IndexFlatL2(2)
+    engine.index.add(__import__("numpy").array([[0.0, 1.0]], dtype="float32"))
+    assert asyncio.run(engine.search("question")) == []
+    assert asyncio.run(engine.search("question", top_k=0)) == []
+
+
+def test_search_handles_zero_or_nonfinite_query_vectors(tmp_path):
+    engine, _ = make_engine(tmp_path)
+    engine.metadata = [{"text": "content"}]
+    engine.index = __import__("faiss").IndexFlatL2(2)
+    engine.index.add(__import__("numpy").array([[1.0, 0.0]], dtype="float32"))
+    async def invalid(_text):
+        return [0.0, 0.0]
+    engine._get_embedding = invalid
+    assert asyncio.run(engine.search("question")) == []
+
+
+def test_rebuild_stores_unit_length_vectors(tmp_path):
+    engine, _ = make_engine(tmp_path)
+    async def scaled_embedding(_text):
+        return [3.0, 4.0]
+    engine._get_embedding = scaled_embedding
+    asyncio.run(engine.rebuild_index())
+    stored = engine.index.reconstruct(0)
+    assert sum(float(value) ** 2 for value in stored) == pytest.approx(1.0)
+
+
+def test_load_legacy_index_normalizes_vectors_in_memory(tmp_path):
+    import faiss
+    import numpy as np
+    import json
+
+    index_dir = tmp_path / "legacy"
+    index_dir.mkdir()
+    legacy = faiss.IndexFlatL2(2)
+    legacy.add(np.asarray([[3.0, 4.0]], dtype="float32"))
+    faiss.write_index(legacy, str(index_dir / "index.faiss"))
+    (index_dir / "metadata.json").write_text(json.dumps([{"text": "legacy"}]), encoding="utf-8")
+    engine = RAGEngine(str(tmp_path / "knowledge.md"), str(index_dir))
+    stored = engine.index.reconstruct(0)
+    assert sum(float(value) ** 2 for value in stored) == pytest.approx(1.0)
+
+
+def test_search_empty_index_returns_empty(tmp_path):
+    import faiss
+
+    engine, _ = make_engine(tmp_path)
+    engine.index = faiss.IndexFlatL2(2)
+    engine.metadata = []
+    assert asyncio.run(engine.search("question")) == []
